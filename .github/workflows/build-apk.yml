@@ -4,13 +4,13 @@ jobs:
 build:
 runs-on: ubuntu-latest
 steps:
-- name: Checkout
+    - name: Checkout
 uses: actions/checkout@v5
-  - name: Build APK
+    - name: Build APK
     run: |
       chmod +x gradlew
       ./gradlew assembleDebug
-  - name: Upload APK
+    - name: Upload APK
     uses: actions/upload-artifact@v4
     with:
       name: NSELive-debug
