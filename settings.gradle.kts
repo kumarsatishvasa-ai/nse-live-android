@@ -1,4 +1,3 @@
-writing{variant="standard" id="31685"}
 pluginManagement {
     repositories {
         google()
