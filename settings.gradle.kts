@@ -1,4 +1,4 @@
-:::writing{variant="standard" id="31685"}
+writing{variant="standard" id="31685"}
 pluginManagement {
     repositories {
         google()
@@ -17,4 +17,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "NSELive"
 include(":app")
-:::
