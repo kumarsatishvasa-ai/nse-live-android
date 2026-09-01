@@ -20,4 +20,3 @@ steps:
     with:
       name: NSELive-debug
       path: app/build/outputs/apk/debug/app-debug.apk
-```
