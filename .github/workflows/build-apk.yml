@@ -1,24 +1,23 @@
-```yaml
 name: Android APK Build
-
-on:
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Build
+      - name: Build APK
         run: ./gradlew assembleDebug
 
-      - name: APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
