@@ -5,7 +5,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="NSE Live"
+        android:label="SATHISH KUMAR VASA"
         android:supportsRtl="true"
         android:theme="@style/Theme.NSELive">
 
