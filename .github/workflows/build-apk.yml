@@ -1,13 +1,8 @@
 name: Android APK Build
-
 on: [push]
-
 jobs:
-build:
-runs-on: ubuntu-latest
-
-```
-steps:
-  - name: Test
-    run: echo "GitHub Actions is working"
-```
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Test
+      run: echo "GitHub Actions is working"
