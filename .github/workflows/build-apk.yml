@@ -1,8 +1,6 @@
 name: Android APK Build
-
 on:
 push:
-
 jobs:
 build:
 runs-on: ubuntu-latest
