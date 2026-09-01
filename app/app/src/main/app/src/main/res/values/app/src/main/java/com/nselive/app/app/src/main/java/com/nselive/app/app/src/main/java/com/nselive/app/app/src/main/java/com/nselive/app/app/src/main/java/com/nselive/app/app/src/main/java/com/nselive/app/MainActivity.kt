@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,18 +25,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -47,80 +48,35 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterialApi::class)
 @Composable
-fun NseLiveScreen() {
+fun NseLiveScreen(
+    viewModel: NseViewModel = viewModel()
+) {
 
-    val repository =
-        remember {
-            NseRepository()
-        }
+    val state by
+        viewModel.uiState.collectAsStateWithLifecycle()
 
-    var metrics by remember {
-        mutableStateOf<NseMetrics?>(null)
-    }
-
-    var loading by remember {
-        mutableStateOf(false)
-    }
-
-    var error by remember {
-        mutableStateOf<String?>(null)
-    }
-
-    suspend fun refresh() {
-
-        if (loading) {
-            return
-        }
-
-        loading = true
-        error = null
-
-        try {
-
-            metrics =
-                repository.loadNifty()
-
-        } catch (e: Exception) {
-
-            error =
-                e.message
-                    ?: "Unable to retrieve NSE data."
-
-        } finally {
-
-            loading = false
-        }
-    }
-
-    /*
-     * Initial load + automatic refresh.
-     *
-     * NSE market hours are approximately 09:15–15:30 IST
-     * Monday-Friday. We only refresh during that period.
-     */
-    LaunchedEffect(Unit) {
-
-        while (true) {
-
-            if (isMarketHours()) {
-                refresh()
-                delay(30_000)
-            } else {
-                delay(60_000)
+    val pullRefreshState =
+        rememberPullRefreshState(
+            refreshing = state.refreshing,
+            onRefresh = {
+                viewModel.manualRefresh()
             }
-        }
-    }
+        )
 
     Scaffold(
         topBar = {
+
             TopAppBar(
                 title = {
+
                     Column {
 
                         Text(
                             text = "NSE LIVE",
-                            fontWeight = FontWeight.Bold
+                            fontWeight =
+                                FontWeight.Bold
                         )
 
                         Text(
@@ -134,186 +90,188 @@ fun NseLiveScreen() {
         }
     ) { padding ->
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement =
-                Arrangement.spacedBy(10.dp)
+        val metrics =
+            state.metrics
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .pullRefresh(
+                        pullRefreshState
+                    )
         ) {
 
-            item {
-
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-                    horizontalArrangement =
-                        Arrangement.SpaceBetween,
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-
-                    Text(
-                        text =
-                            if (isMarketHours())
-                                "● MARKET OPEN"
-                            else
-                                "● MARKET CLOSED",
-                        color =
-                            if (isMarketHours())
-                                Color(0xFF2E7D32)
-                            else
-                                Color.Gray,
-                        fontWeight =
-                            FontWeight.Bold
+            PullRefreshIndicator(
+                refreshing = state.refreshing,
+                state = pullRefreshState,
+                modifier =
+                    Modifier.align(
+                        Alignment.CenterHorizontally
                     )
+            )
 
-                    Button(
-                        onClick = {
-                            // Manual refresh is triggered
-                            // through a new coroutine below.
-                        }
-                    ) {
-                        Text("Refresh")
-                    }
-                }
-            }
+            LazyColumn(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(
+                            horizontal = 16.dp
+                        ),
+                verticalArrangement =
+                    Arrangement.spacedBy(10.dp)
+            ) {
 
-            item {
+                item {
 
-                if (loading) {
+                    Spacer(
+                        modifier =
+                            Modifier.height(8.dp)
+                    )
 
                     Row(
                         modifier =
                             Modifier.fillMaxWidth(),
                         horizontalArrangement =
-                            Arrangement.Center,
+                            Arrangement.SpaceBetween,
                         verticalAlignment =
                             Alignment.CenterVertically
                     ) {
 
-                        CircularProgressIndicator()
-
-                        Spacer(
-                            modifier =
-                                Modifier.padding(8.dp)
-                        )
-
                         Text(
                             text =
-                                "Updating NSE..."
-                        )
-                    }
-                }
-            }
-
-            val current =
-                metrics
-
-            item {
-                MetricCard(
-                    "PCR (OI)",
-                    current?.pcrOi
-                )
-            }
-
-            item {
-                MetricCard(
-                    "PCR (Volume)",
-                    current?.pcrVolume
-                )
-            }
-
-            item {
-                MetricCard(
-                    "Max Pain",
-                    current?.maxPain
-                )
-            }
-
-            item {
-                MetricCard(
-                    "Gamma Flip",
-                    current?.gammaFlip
-                )
-            }
-
-            item {
-                MetricCard(
-                    "Call Wall",
-                    current?.callWall
-                )
-            }
-
-            item {
-                MetricCard(
-                    "Put Wall",
-                    current?.putWall
-                )
-            }
-
-            item {
-                MetricCard(
-                    "Expected Move",
-                    current?.expectedMove
-                )
-            }
-
-            item {
-                MetricCard(
-                    "India VIX",
-                    current?.indiaVix
-                )
-            }
-
-            item {
-
-                Card(
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-
-                    Column(
-                        modifier =
-                            Modifier.padding(16.dp)
-                    ) {
-
-                        Text(
-                            text =
-                                "Last Updated",
+                                if (
+                                    NseViewModel
+                                        .isMarketHours()
+                                ) {
+                                    "● MARKET OPEN"
+                                } else {
+                                    "● MARKET CLOSED"
+                                },
                             color =
-                                Color.Gray,
-                            fontSize =
-                                13.sp
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(4.dp)
-                        )
-
-                        Text(
-                            text =
-                                current?.updatedAt
-                                    ?: "--:--:--",
-                            fontSize =
-                                18.sp,
+                                if (
+                                    NseViewModel
+                                        .isMarketHours()
+                                ) {
+                                    Color(0xFF2E7D32)
+                                } else {
+                                    Color.Gray
+                                },
                             fontWeight =
                                 FontWeight.Bold
                         )
+
+                        Button(
+                            enabled =
+                                !state.loading,
+                            onClick = {
+                                viewModel.manualRefresh()
+                            }
+                        ) {
+                            Text("Refresh")
+                        }
                     }
                 }
-            }
 
-            item {
+                item {
 
-                error?.let { message ->
+                    if (
+                        state.loading &&
+                        metrics == null
+                    ) {
+
+                        Row(
+                            modifier =
+                                Modifier.fillMaxWidth(),
+                            horizontalArrangement =
+                                Arrangement.Center,
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+
+                            CircularProgressIndicator(
+                                modifier =
+                                    Modifier
+                                        .height(24.dp)
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(8.dp)
+                            )
+
+                            Text(
+                                "Connecting to NSE..."
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    MetricCard(
+                        name = "PCR (OI)",
+                        value = metrics?.pcrOi
+                    )
+                }
+
+                item {
+                    MetricCard(
+                        name = "PCR (Volume)",
+                        value =
+                            metrics?.pcrVolume
+                    )
+                }
+
+                item {
+                    MetricCard(
+                        name = "Max Pain",
+                        value =
+                            metrics?.maxPain
+                    )
+                }
+
+                item {
+                    MetricCard(
+                        name = "Gamma Flip",
+                        value =
+                            metrics?.gammaFlip
+                    )
+                }
+
+                item {
+                    MetricCard(
+                        name = "Call Wall",
+                        value =
+                            metrics?.callWall
+                    )
+                }
+
+                item {
+                    MetricCard(
+                        name = "Put Wall",
+                        value =
+                            metrics?.putWall
+                    )
+                }
+
+                item {
+                    MetricCard(
+                        name = "Expected Move",
+                        value =
+                            metrics?.expectedMove
+                    )
+                }
+
+                item {
+                    MetricCard(
+                        name = "India VIX",
+                        value =
+                            metrics?.indiaVix
+                    )
+                }
+
+                item {
 
                     Card(
                         modifier =
@@ -327,52 +285,93 @@ fun NseLiveScreen() {
 
                             Text(
                                 text =
-                                    "NSE connection error",
-                                fontWeight =
-                                    FontWeight.Bold,
-                                color =
-                                    Color(0xFFD32F2F)
+                                    "Last Updated",
+                                fontSize = 13.sp,
+                                color = Color.Gray
                             )
 
                             Spacer(
                                 modifier =
-                                    Modifier.height(6.dp)
+                                    Modifier.height(4.dp)
                             )
 
                             Text(
                                 text =
-                                    message,
-                                color =
-                                    Color(0xFFD32F2F)
+                                    metrics
+                                        ?.updatedAt
+                                        ?: "--:--:--",
+                                fontSize = 18.sp,
+                                fontWeight =
+                                    FontWeight.Bold
                             )
                         }
                     }
                 }
-            }
 
-            item {
+                item {
 
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
+                    state.error?.let { message ->
 
-                Text(
-                    text =
-                        if (isMarketHours())
-                            "Auto-refresh: every 30 seconds"
-                        else
-                            "Auto-refresh paused — market closed",
-                    fontSize =
-                        12.sp,
-                    color =
-                        Color.Gray
-                )
+                        Card(
+                            modifier =
+                                Modifier.fillMaxWidth()
+                        ) {
 
-                Spacer(
-                    modifier =
-                        Modifier.height(20.dp)
-                )
+                            Column(
+                                modifier =
+                                    Modifier.padding(16.dp)
+                            ) {
+
+                                Text(
+                                    text =
+                                        "NSE connection error",
+                                    fontWeight =
+                                        FontWeight.Bold,
+                                    color =
+                                        Color(0xFFD32F2F)
+                                )
+
+                                Spacer(
+                                    modifier =
+                                        Modifier.height(6.dp)
+                                )
+
+                                Text(
+                                    text = message,
+                                    color =
+                                        Color(0xFFD32F2F)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        text =
+                            if (
+                                NseViewModel
+                                    .isMarketHours()
+                            ) {
+                                "Auto-refresh: every 30 seconds"
+                            } else {
+                                "Auto-refresh paused — market closed"
+                            },
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(20.dp)
+                    )
+                }
             }
         }
     }
@@ -439,49 +438,5 @@ private fun formatMetric(
             value
         )
     }
-}
-
-/**
- * NSE normal equity/derivatives market window:
- * Monday-Friday, 09:15-15:30 IST.
- */
-private fun isMarketHours(): Boolean {
-
-    val calendar =
-        java.util.Calendar.getInstance(
-            java.util.TimeZone.getTimeZone(
-                "Asia/Kolkata"
-            )
-        )
-
-    val day =
-        calendar.get(
-            java.util.Calendar.DAY_OF_WEEK
-        )
-
-    if (
-        day ==
-            java.util.Calendar.SATURDAY ||
-        day ==
-            java.util.Calendar.SUNDAY
-    ) {
-        return false
-    }
-
-    val hour =
-        calendar.get(
-            java.util.Calendar.HOUR_OF_DAY
-        )
-
-    val minute =
-        calendar.get(
-            java.util.Calendar.MINUTE
-        )
-
-    val totalMinutes =
-        hour * 60 + minute
-
-    return totalMinutes >= 9 * 60 + 15 &&
-            totalMinutes <= 15 * 60 + 30
 }
 ```
