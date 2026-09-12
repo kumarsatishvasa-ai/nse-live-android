@@ -1,4 +1,3 @@
-```kotlin
 package com.nselive.app
 
 import kotlin.math.abs
@@ -289,4 +288,3 @@ object MetricsCalculator {
                 )
     }
 }
-```
