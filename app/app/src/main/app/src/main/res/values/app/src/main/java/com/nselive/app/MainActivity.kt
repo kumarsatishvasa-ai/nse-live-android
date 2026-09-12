@@ -1,4 +1,3 @@
-package com.nselive.app
 import androidx.compose.runtime.Composable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
