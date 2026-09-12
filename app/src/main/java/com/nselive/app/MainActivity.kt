@@ -95,7 +95,7 @@ fun NseLiveScreen() {
                 title = {
                     Column {
                         Text(
-                            text = "NSE LIVE",
+                            text = "SATHISH KUMAR VASA Option Analytics",
                             fontWeight = FontWeight.Bold
                         )
                         Text(
