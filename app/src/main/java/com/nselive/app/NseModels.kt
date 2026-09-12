@@ -1,4 +1,3 @@
-```kotlin
 package com.nselive.app
 
 data class OptionContract(
@@ -35,4 +34,3 @@ data class NseResult(
     val indiaVix: IndiaVix? = null,
     val error: String? = null
 )
-```
