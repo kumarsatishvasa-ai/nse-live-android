@@ -18,7 +18,14 @@ class NseApi {
 
     companion object {
 
-        private const val BASE_URL = "https://www.nseindia.com"
+        private const val BASE_URL =
+            "https://www.nseindia.com"
+
+        private const val HOME_PAGE =
+            "$BASE_URL/"
+
+        private const val OPTION_CHAIN_PAGE =
+            "$BASE_URL/option-chain"
 
         private const val OPTION_CHAIN_URL =
             "$BASE_URL/api/option-chain-v3"
@@ -28,21 +35,15 @@ class NseApi {
 
         private const val CONTRACT_INFO_URL =
             "$BASE_URL/api/option-chain-contract-info"
-
-        private const val OPTION_CHAIN_PAGE =
-            "$BASE_URL/option-chain"
-
-        private const val HOME_PAGE =
-            "$BASE_URL/"
     }
 
+
     /*
-     * NSE uses cookies/session information.
-     * Keep cookies received from NSE and send them
-     * with subsequent requests.
+     * NSE uses cookies during normal browser requests.
      */
     private val cookies =
         mutableMapOf<String, MutableList<Cookie>>()
+
 
     private val cookieJar =
         object : CookieJar {
@@ -51,29 +52,27 @@ class NseApi {
                 url: HttpUrl,
                 cookies: List<Cookie>
             ) {
-                if (cookies.isNotEmpty()) {
-                    this@NseApi.cookies[url.host] =
-                        cookies.toMutableList()
-                }
+                this@NseApi.cookies[url.host] =
+                    cookies.toMutableList()
             }
+
 
             override fun loadForRequest(
-    url: HttpUrl
-): List<Cookie> {
-    return this@NseApi.cookies[url.host]
-        ?.filter { cookie ->
-            cookie.expiresAt > System.currentTimeMillis()
-        }
-        ?: emptyList()
-}
+                url: HttpUrl
+            ): List<Cookie> {
 
-                }
+                val now =
+                    System.currentTimeMillis()
+
+                return this@NseApi.cookies[url.host]
+                    ?.filter { cookie ->
+                        cookie.expiresAt > now
+                    }
+                    ?: emptyList()
             }
         }
 
-    /*
-     * HTTP client
-     */
+
     private val client =
         OkHttpClient.Builder()
             .cookieJar(cookieJar)
@@ -90,13 +89,11 @@ class NseApi {
                 TimeUnit.SECONDS
             )
             .retryOnConnectionFailure(true)
-            .followRedirects(true)
-            .followSslRedirects(true)
             .build()
 
+
     /*
-     * Headers that make the request look like
-     * a normal browser request.
+     * Browser-like headers.
      */
     private val headers =
         mapOf(
@@ -114,112 +111,77 @@ class NseApi {
                     "no-cache",
 
             "User-Agent" to
-                    "Mozilla/5.0 (Linux; Android 14; " +
-                    "Pixel 7) AppleWebKit/537.36 " +
+                    "Mozilla/5.0 (Linux; Android 14) " +
+                    "AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) " +
-                    "Chrome/124.0.0.0 Mobile Safari/537.36",
-
-            "Sec-Fetch-Dest" to
-                    "empty",
-
-            "Sec-Fetch-Mode" to
-                    "cors",
-
-            "Sec-Fetch-Site" to
-                    "same-origin",
+                    "Chrome/124.0.0.0 " +
+                    "Mobile Safari/537.36",
 
             "X-Requested-With" to
                     "XMLHttpRequest"
         )
 
-    /**
+
+    /*
      * Generic GET request.
      */
     private suspend fun get(
         url: String,
         referer: String
-    ): String = withContext(Dispatchers.IO) {
+    ): String =
+        withContext(Dispatchers.IO) {
 
-        val requestBuilder =
-            Request.Builder()
-                .url(url)
-                .get()
-                .header(
-                    "Referer",
-                    referer
+            val builder =
+                Request.Builder()
+                    .url(url)
+                    .get()
+                    .header(
+                        "Referer",
+                        referer
+                    )
+
+            headers.forEach { (key, value) ->
+
+                builder.header(
+                    key,
+                    value
                 )
+            }
 
-        headers.forEach { (key, value) ->
-            requestBuilder.header(
-                key,
-                value
-            )
-        }
 
-        val request =
-            requestBuilder.build()
-
-        val response =
             client
-                .newCall(request)
+                .newCall(
+                    builder.build()
+                )
                 .execute()
+                .use { response ->
 
-        response.use {
+                    val body =
+                        response.body?.string()
+                            ?: ""
 
-            val body =
-                it.body?.string()
-                    ?: ""
+                    if (!response.isSuccessful) {
 
-            if (!it.isSuccessful) {
+                        throw NseApiException(
+                            "NSE HTTP ${response.code}: ${body.take(200)}"
+                        )
+                    }
 
-                throw NseApiException(
-                    "NSE HTTP ${it.code}: ${body.take(300)}"
-                )
-            }
+                    if (body.isBlank()) {
 
-            if (body.isBlank()) {
+                        throw NseApiException(
+                            "NSE returned an empty response"
+                        )
+                    }
 
-                throw NseApiException(
-                    "NSE returned an empty response"
-                )
-            }
-
-            return@withContext body
+                    body
+                }
         }
-    }
 
-    /**
-     * Open NSE pages first so NSE can establish
-     * the required session cookies.
+
+    /*
+     * Establish NSE cookies before API requests.
      */
-     private val cookies =
-    mutableMapOf<String, MutableList<Cookie>>()
-
-private val cookieJar = object : CookieJar {
-
-    override fun saveFromResponse(
-        url: HttpUrl,
-        cookies: List<Cookie>
-    ) {
-        this@NseApi.cookies[url.host] =
-            cookies.toMutableList()
-    }
-
-    override fun loadForRequest(
-        url: HttpUrl
-    ): List<Cookie> {
-
-        val now =
-            System.currentTimeMillis()
-
-        return this@NseApi.cookies[url.host]
-            ?.filter { cookie ->
-                cookie.expiresAt > now
-            }
-            ?: emptyList()
-    }
-}
-
     private suspend fun prime() {
 
         try {
@@ -229,14 +191,6 @@ private val cookieJar = object : CookieJar {
                 HOME_PAGE
             )
 
-        } catch (e: Exception) {
-
-            // Continue because the next request may
-            // still succeed.
-        }
-
-        try {
-
             get(
                 OPTION_CHAIN_PAGE,
                 HOME_PAGE
@@ -244,41 +198,18 @@ private val cookieJar = object : CookieJar {
 
         } catch (e: Exception) {
 
-            // Continue.
+            /*
+             * Do not stop here.
+             *
+             * The actual API request will determine
+             * whether NSE is accessible.
+             */
         }
     }
 
-    /**
-     * Get NIFTY option-chain data.
-     */
-    suspend fun getOptionChain(
-        symbol: String = "NIFTY",
-        expiry: String
-    ): OptionChain {
 
-        prime()
-
-        val timestamp =
-            System.currentTimeMillis()
-
-        val url =
-            OPTION_CHAIN_URL +
-                    "?type=Indices" +
-                    "&symbol=${encode(symbol)}" +
-                    "&expiry=${encode(expiry)}" +
-                    "&_=$timestamp"
-
-        val json =
-            get(
-                url,
-                OPTION_CHAIN_PAGE
-            )
-
-        return parseOptionChain(json)
-    }
-
-    /**
-     * Get available NIFTY expiry dates.
+    /*
+     * Get NIFTY expiry dates.
      */
     suspend fun getExpiries(
         symbol: String = "NIFTY"
@@ -286,13 +217,11 @@ private val cookieJar = object : CookieJar {
 
         prime()
 
-        val timestamp =
-            System.currentTimeMillis()
-
         val url =
             CONTRACT_INFO_URL +
                     "?symbol=${encode(symbol)}" +
-                    "&_=$timestamp"
+                    "&_=${System.currentTimeMillis()}"
+
 
         val json =
             get(
@@ -300,49 +229,47 @@ private val cookieJar = object : CookieJar {
                 OPTION_CHAIN_PAGE
             )
 
-        val root =
-            try {
-                JSONObject(json)
-            } catch (e: Exception) {
 
-                throw NseApiException(
-                    "Invalid NSE expiry response: " +
-                            "${e.message}"
-                )
-            }
+        val root =
+            JSONObject(json)
+
 
         val result =
             mutableListOf<String>()
 
+
         /*
-         * Possible response:
-         *
-         * {
-         *   "expiryDates": [...]
-         * }
+         * Some NSE responses put expiryDates
+         * at the root.
          */
-        val expiryArray =
+        val rootExpiryDates =
             root.optJSONArray(
                 "expiryDates"
             )
 
-        if (expiryArray != null) {
 
-            for (i in 0 until expiryArray.length()) {
+        if (rootExpiryDates != null) {
+
+            for (
+                i in
+                0 until rootExpiryDates.length()
+            ) {
 
                 val expiry =
-                    expiryArray.optString(i)
+                    rootExpiryDates
+                        .optString(i)
                         .trim()
 
                 if (expiry.isNotEmpty()) {
+
                     result.add(expiry)
                 }
             }
         }
 
+
         /*
-         * Some NSE responses place expiryDates
-         * inside records.
+         * Other responses put them inside records.
          */
         if (result.isEmpty()) {
 
@@ -351,28 +278,33 @@ private val cookieJar = object : CookieJar {
                     "records"
                 )
 
-            val recordsExpiry =
+
+            val recordsExpiryDates =
                 records?.optJSONArray(
                     "expiryDates"
                 )
 
-            if (recordsExpiry != null) {
+
+            if (recordsExpiryDates != null) {
 
                 for (
-                    i in 0 until recordsExpiry.length()
+                    i in
+                    0 until recordsExpiryDates.length()
                 ) {
 
                     val expiry =
-                        recordsExpiry
+                        recordsExpiryDates
                             .optString(i)
                             .trim()
 
                     if (expiry.isNotEmpty()) {
+
                         result.add(expiry)
                     }
                 }
             }
         }
+
 
         if (result.isEmpty()) {
 
@@ -381,54 +313,87 @@ private val cookieJar = object : CookieJar {
             )
         }
 
+
         return result.distinct()
     }
 
-    /**
-     * Get India VIX from NSE all-indices endpoint.
+
+    /*
+     * Get NIFTY option chain.
+     */
+    suspend fun getOptionChain(
+        symbol: String = "NIFTY",
+        expiry: String
+    ): OptionChain {
+
+        prime()
+
+
+        val timestamp =
+            System.currentTimeMillis()
+
+
+        val url =
+            OPTION_CHAIN_URL +
+                    "?type=Indices" +
+                    "&symbol=${encode(symbol)}" +
+                    "&expiry=${encode(expiry)}" +
+                    "&_=$timestamp"
+
+
+        val json =
+            get(
+                url,
+                OPTION_CHAIN_PAGE
+            )
+
+
+        return parseOptionChain(json)
+    }
+
+
+    /*
+     * Get India VIX.
      */
     suspend fun getIndiaVix(): IndiaVix {
 
         prime()
 
-        val timestamp =
-            System.currentTimeMillis()
 
         val url =
             ALL_INDICES_URL +
-                    "?_=$timestamp"
+                    "?_=${System.currentTimeMillis()}"
+
 
         val json =
             get(
                 url,
-                "$BASE_URL/market-data/" +
-                        "live-market-indices"
+                "$BASE_URL/market-data/live-market-indices"
             )
 
-        val root =
-            try {
-                JSONObject(json)
-            } catch (e: Exception) {
 
-                throw NseApiException(
-                    "Invalid NSE indices response: " +
-                            "${e.message}"
-                )
-            }
+        val root =
+            JSONObject(json)
+
 
         val data =
             root.optJSONArray("data")
                 ?: throw NseApiException(
-                    "NSE indices response has no data"
+                    "NSE India VIX response has no data"
                 )
 
-        for (i in 0 until data.length()) {
+
+        for (
+            i in
+            0 until data.length()
+        ) {
 
             val row =
                 data.optJSONObject(i)
                     ?: continue
 
-            val indexName =
+
+            val index =
                 row.optString(
                     "index",
                     ""
@@ -436,66 +401,63 @@ private val cookieJar = object : CookieJar {
                     .trim()
                     .uppercase(Locale.US)
 
+
             if (
-                indexName == "INDIA VIX" ||
-                indexName == "INDIA VIX INDEX"
+                index == "INDIA VIX" ||
+                index == "INDIA VIX "
             ) {
 
-                val last =
-                    getDouble(
-                        row,
-                        "last"
+                val value =
+                    row.optDouble(
+                        "last",
+                        Double.NaN
                     )
 
-                val percentChange =
-                    getDouble(
-                        row,
-                        "percentChange"
-                    )
 
-                val open =
-                    getDouble(
-                        row,
-                        "open"
-                    )
-
-                if (last <= 0.0) {
+                if (value.isNaN()) {
 
                     throw NseApiException(
-                        "NSE returned invalid India VIX value"
+                        "India VIX value was not returned by NSE"
                     )
                 }
 
+
                 return IndiaVix(
-                    value = last,
-                    changePct = percentChange,
-                    open = open
+
+                    value = value,
+
+                    changePct =
+                        row.optDouble(
+                            "percentChange",
+                            0.0
+                        ),
+
+                    open =
+                        row.optDouble(
+                            "open",
+                            0.0
+                        )
                 )
             }
         }
+
 
         throw NseApiException(
             "India VIX was not found in NSE response"
         )
     }
 
-    /**
-     * Parse NSE option-chain JSON.
+
+    /*
+     * Parse option-chain JSON.
      */
     private fun parseOptionChain(
         json: String
     ): OptionChain {
 
         val root =
-            try {
-                JSONObject(json)
-            } catch (e: Exception) {
+            JSONObject(json)
 
-                throw NseApiException(
-                    "Invalid NSE option-chain JSON: " +
-                            "${e.message}"
-                )
-            }
 
         val records =
             root.optJSONObject(
@@ -505,24 +467,20 @@ private val cookieJar = object : CookieJar {
                     "NSE response has no records"
                 )
 
+
         val timestamp =
             records.optString(
                 "timestamp",
                 now()
             )
 
+
         val underlying =
-            getDouble(
-                records,
-                "underlyingValue"
+            records.optDouble(
+                "underlyingValue",
+                0.0
             )
 
-        if (underlying <= 0.0) {
-
-            throw NseApiException(
-                "NSE returned invalid NIFTY price"
-            )
-        }
 
         val data =
             records.optJSONArray(
@@ -532,117 +490,50 @@ private val cookieJar = object : CookieJar {
                     "NSE response has no option-chain data"
                 )
 
+
         val contracts =
             mutableListOf<OptionContract>()
 
-        for (i in 0 until data.length()) {
+
+        for (
+            i in
+            0 until data.length()
+        ) {
 
             val row =
                 data.optJSONObject(i)
                     ?: continue
 
+
             val strike =
-                getDouble(
-                    row,
-                    "strikePrice"
+                row.optDouble(
+                    "strikePrice",
+                    0.0
                 )
+
 
             val expiry =
                 row.optString(
                     "expiryDate",
                     ""
                 )
-                    .trim()
+
 
             if (strike <= 0.0) {
                 continue
             }
 
-            /*
-             * Call data
-             */
+
             val ce =
                 row.optJSONObject("CE")
 
-            val callOi =
-                getDouble(
-                    ce,
-                    "openInterest"
-                )
 
-            val callOiChange =
-                getDouble(
-                    ce,
-                    "changeinOpenInterest"
-                )
-
-            val callVolume =
-                getDouble(
-                    ce,
-                    "totalTradedVolume"
-                )
-
-            val callIv =
-                getDouble(
-                    ce,
-                    "impliedVolatility"
-                )
-
-            val callLtp =
-                getDouble(
-                    ce,
-                    "lastPrice"
-                )
-
-            /*
-             * Put data
-             */
             val pe =
                 row.optJSONObject("PE")
 
-            val putOi =
-                getDouble(
-                    pe,
-                    "openInterest"
-                )
-
-            val putOiChange =
-                getDouble(
-                    pe,
-                    "changeinOpenInterest"
-                )
-
-            val putVolume =
-                getDouble(
-                    pe,
-                    "totalTradedVolume"
-                )
-
-            val putIv =
-                getDouble(
-                    pe,
-                    "impliedVolatility"
-                )
-
-            val putLtp =
-                getDouble(
-                    pe,
-                    "lastPrice"
-                )
-
-            /*
-             * Ignore completely empty contracts.
-             */
-            if (
-                callOi == 0.0 &&
-                putOi == 0.0 &&
-                callVolume == 0.0 &&
-                putVolume == 0.0
-            ) {
-                continue
-            }
 
             contracts.add(
+
                 OptionContract(
 
                     strikePrice =
@@ -651,45 +542,87 @@ private val cookieJar = object : CookieJar {
                     expiryDate =
                         expiry,
 
+
                     callOi =
-                        callOi,
+                        ce?.optDouble(
+                            "openInterest",
+                            0.0
+                        ) ?: 0.0,
+
 
                     callOiChange =
-                        callOiChange,
+                        ce?.optDouble(
+                            "changeinOpenInterest",
+                            0.0
+                        ) ?: 0.0,
+
 
                     callVolume =
-                        callVolume,
+                        ce?.optDouble(
+                            "totalTradedVolume",
+                            0.0
+                        ) ?: 0.0,
+
 
                     callIv =
-                        callIv,
+                        ce?.optDouble(
+                            "impliedVolatility",
+                            0.0
+                        ) ?: 0.0,
+
 
                     callLtp =
-                        callLtp,
+                        ce?.optDouble(
+                            "lastPrice",
+                            0.0
+                        ) ?: 0.0,
+
 
                     putOi =
-                        putOi,
+                        pe?.optDouble(
+                            "openInterest",
+                            0.0
+                        ) ?: 0.0,
+
 
                     putOiChange =
-                        putOiChange,
+                        pe?.optDouble(
+                            "changeinOpenInterest",
+                            0.0
+                        ) ?: 0.0,
+
 
                     putVolume =
-                        putVolume,
+                        pe?.optDouble(
+                            "totalTradedVolume",
+                            0.0
+                        ) ?: 0.0,
+
 
                     putIv =
-                        putIv,
+                        pe?.optDouble(
+                            "impliedVolatility",
+                            0.0
+                        ) ?: 0.0,
+
 
                     putLtp =
-                        putLtp
+                        pe?.optDouble(
+                            "lastPrice",
+                            0.0
+                        ) ?: 0.0
                 )
             )
         }
 
+
         if (contracts.isEmpty()) {
 
             throw NseApiException(
-                "NSE returned zero option contracts"
+                "NSE returned no option contracts"
             )
         }
+
 
         return OptionChain(
 
@@ -704,42 +637,8 @@ private val cookieJar = object : CookieJar {
         )
     }
 
-    /**
-     * Safely read a numeric value from JSON.
-     *
-     * NSE can occasionally return null,
-     * empty strings, or numbers as strings.
-     */
-    private fun getDouble(
-        obj: JSONObject?,
-        key: String
-    ): Double {
 
-        if (obj == null) {
-            return 0.0
-        }
-
-        val value =
-            obj.opt(key)
-
-        return when (value) {
-
-            is Number ->
-                value.toDouble()
-
-            is String ->
-                value
-                    .trim()
-                    .replace(",", "")
-                    .toDoubleOrNull()
-                    ?: 0.0
-
-            else ->
-                0.0
-        }
-    }
-
-    /**
+    /*
      * URL encode query parameters.
      */
     private fun encode(
@@ -752,18 +651,21 @@ private val cookieJar = object : CookieJar {
         )
     }
 
-    /**
-     * Current timestamp for fallback display.
+
+    /*
+     * Current local timestamp.
      */
     private fun now(): String {
 
         return SimpleDateFormat(
             "dd-MMM-yyyy HH:mm:ss",
             Locale.US
+        ).format(
+            Date()
         )
-            .format(Date())
     }
 }
+
 
 class NseApiException(
     message: String
