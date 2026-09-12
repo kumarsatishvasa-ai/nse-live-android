@@ -1,0 +1,1221 @@
+package com.nselive.app
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+/**
+ * BSE API / data layer.
+ *
+ * Supported symbols:
+ *
+ * SENSEX
+ * BANKEX
+ * BSEFOCUSED
+ *
+ * This class is deliberately separate from NseApi.kt.
+ *
+ * IMPORTANT:
+ * BSE's official market-data platform provides structured
+ * market-data APIs through its data-delivery services.
+ *
+ * The public BSE derivatives page is used here as the
+ * public-data fallback.
+ */
+class BseApi {
+
+    companion object {
+
+        private const val BASE_URL =
+            "https://www.bseindia.com"
+
+        private const val DERIVATIVES_URL =
+            "$BASE_URL/stock-share-price/future-options/derivatives"
+
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) " +
+                    "AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) " +
+                    "Chrome/124.0 Mobile Safari/537.36"
+    }
+
+    private val cookies =
+        mutableMapOf<String, MutableList<Cookie>>()
+
+    private val cookieJar =
+        object : CookieJar {
+
+            override fun saveFromResponse(
+                url: HttpUrl,
+                cookies: List<Cookie>
+            ) {
+
+                this@BseApi.cookies[url.host] =
+                    cookies.toMutableList()
+            }
+
+            override fun loadForRequest(
+                url: HttpUrl
+            ): List<Cookie> {
+
+                val now =
+                    System.currentTimeMillis()
+
+                return this@BseApi.cookies[url.host]
+                    ?.filter { cookie ->
+                        cookie.expiresAt > now
+                    }
+                    ?: emptyList()
+            }
+        }
+
+    private val client =
+        OkHttpClient.Builder()
+            .cookieJar(cookieJar)
+            .connectTimeout(
+                20,
+                TimeUnit.SECONDS
+            )
+            .readTimeout(
+                30,
+                TimeUnit.SECONDS
+            )
+            .writeTimeout(
+                30,
+                TimeUnit.SECONDS
+            )
+            .retryOnConnectionFailure(true)
+            .build()
+
+    private val headers =
+        mapOf(
+
+            "Accept" to
+                    "application/json, text/plain, */*",
+
+            "Accept-Language" to
+                    "en-US,en;q=0.9",
+
+            "Cache-Control" to
+                    "no-cache",
+
+            "Pragma" to
+                    "no-cache",
+
+            "User-Agent" to
+                    USER_AGENT,
+
+            "X-Requested-With" to
+                    "XMLHttpRequest"
+        )
+
+    /**
+     * Performs a GET request.
+     */
+    private suspend fun get(
+        url: String,
+        referer: String = BASE_URL
+    ): String =
+        withContext(Dispatchers.IO) {
+
+            val builder =
+                Request.Builder()
+                    .url(url)
+                    .get()
+                    .header(
+                        "Referer",
+                        referer
+                    )
+
+            headers.forEach { (key, value) ->
+
+                builder.header(
+                    key,
+                    value
+                )
+            }
+
+            val response =
+                client.newCall(
+                    builder.build()
+                ).execute()
+
+            val body =
+                response.body?.string()
+                    ?: ""
+
+            if (!response.isSuccessful) {
+
+                throw BseApiException(
+                    "BSE HTTP ${response.code}"
+                )
+            }
+
+            if (body.isBlank()) {
+
+                throw BseApiException(
+                    "BSE returned an empty response"
+                )
+            }
+
+            body
+        }
+
+    /**
+     * Opens BSE home page first.
+     *
+     * This obtains cookies that BSE may require
+     * before subsequent requests.
+     */
+    private suspend fun prime() {
+
+        try {
+
+            get(
+                BASE_URL,
+                BASE_URL
+            )
+
+        } catch (_: Exception) {
+
+            /*
+             * Do not fail here.
+             *
+             * The actual request below will provide
+             * the useful error message.
+             */
+        }
+    }
+
+    /**
+     * Returns the BSE symbol code used by the
+     * derivatives page.
+     *
+     * BSE uses internal security/index identifiers.
+     *
+     * These values can change, so the method is kept
+     * in one place.
+     */
+    private fun symbolCode(
+        symbol: String
+    ): String {
+
+        return when (
+            symbol.uppercase(Locale.US)
+        ) {
+
+            "SENSEX" ->
+                "1"
+
+            "BANKEX" ->
+                "12"
+
+            "BSEFOCUSED" ->
+                "BSEFOCUSED"
+
+            else ->
+                throw BseApiException(
+                    "Unsupported BSE symbol: $symbol"
+                )
+        }
+    }
+
+    /**
+     * Returns expiry dates.
+     *
+     * The parser accepts several JSON layouts because
+     * BSE has used different response structures over time.
+     */
+    suspend fun getExpiries(
+        symbol: String = "SENSEX"
+    ): List<String> {
+
+        prime()
+
+        val code =
+            symbolCode(symbol)
+
+        val urls =
+            listOf(
+
+                "$BASE_URL/stock-share-price/" +
+                        "future-options/derivatives/" +
+                        "$code",
+
+                "$BASE_URL/stock-share-price/" +
+                        "future-options/derivatives/" +
+                        "$code/"
+
+            )
+
+        var lastError:
+                Exception? = null
+
+        for (url in urls) {
+
+            try {
+
+                val body =
+                    get(
+                        url = url,
+                        referer =
+                            "$BASE_URL/"
+                    )
+
+                val expiries =
+                    extractExpiryDates(body)
+
+                if (expiries.isNotEmpty()) {
+
+                    return expiries
+                        .distinct()
+                }
+
+            } catch (e: Exception) {
+
+                lastError = e
+            }
+        }
+
+        throw BseApiException(
+
+            lastError?.message
+                ?: "BSE returned no expiry dates"
+        )
+    }
+
+    /**
+     * Retrieves an option chain.
+     *
+     * If BSE returns a JSON response, it is parsed into
+     * the common OptionChain model used by the analytics
+     * calculator.
+     */
+    suspend fun getOptionChain(
+        symbol: String,
+        expiry: String
+    ): OptionChain {
+
+        prime()
+
+        if (expiry.isBlank()) {
+
+            throw BseApiException(
+                "BSE expiry date is empty"
+            )
+        }
+
+        val code =
+            symbolCode(symbol)
+
+        /*
+         * First request the BSE derivatives page.
+         *
+         * The page contains the option-chain structure
+         * and may expose the underlying request data.
+         */
+        val pageUrl =
+            "$DERIVATIVES_URL/$code"
+
+        val page =
+            get(
+                pageUrl,
+                BASE_URL
+            )
+
+        /*
+         * Try to locate embedded JSON data.
+         */
+        val jsonObjects =
+            extractJsonObjects(page)
+
+        for (json in jsonObjects) {
+
+            try {
+
+                val chain =
+                    parseOptionChainJson(
+                        json = json,
+                        expiry = expiry
+                    )
+
+                if (chain.contracts.isNotEmpty()) {
+
+                    return chain
+                }
+
+            } catch (_: Exception) {
+
+                /*
+                 * Try the next possible JSON object.
+                 */
+            }
+        }
+
+        /*
+         * If the public page did not expose a usable
+         * structured response, return a clear error.
+         *
+         * This is preferable to returning fake "--" values.
+         */
+        throw BseApiException(
+            "BSE option-chain data could not be " +
+                    "read from the public response. " +
+                    "BSE structured market-data API access " +
+                    "may be required."
+        )
+    }
+
+    /**
+     * Parses a BSE JSON object.
+     *
+     * The parser supports both:
+     *
+     * 1. data: [...]
+     * 2. records: { data: [...] }
+     */
+    private fun parseOptionChainJson(
+        json: JSONObject,
+        expiry: String
+    ): OptionChain {
+
+        val records =
+            json.optJSONObject("records")
+                ?: json
+
+        val underlying =
+            firstDouble(
+                records,
+                listOf(
+                    "underlyingValue",
+                    "UnderlyingValue",
+                    "Underlying_Value",
+                    "lastPrice",
+                    "LastPrice",
+                    "LTP"
+                )
+            )
+
+        val timestamp =
+            firstString(
+                records,
+                listOf(
+                    "timestamp",
+                    "Timestamp",
+                    "timeStamp",
+                    "updatedAt"
+                )
+            )
+                ?: now()
+
+        val array =
+            records.optJSONArray("data")
+                ?: records.optJSONArray("Data")
+                ?: records.optJSONArray(
+                    "optionChain"
+                )
+                ?: records.optJSONArray(
+                    "OptionChain"
+                )
+                ?: JSONArray()
+
+        val contracts =
+            mutableListOf<OptionContract>()
+
+        for (i in 0 until array.length()) {
+
+            val row =
+                array.optJSONObject(i)
+                    ?: continue
+
+            val contractExpiry =
+                firstString(
+                    row,
+                    listOf(
+                        "expiryDate",
+                        "ExpiryDate",
+                        "expiry",
+                        "Expiry",
+                        "End_TimeStamp"
+                    )
+                )
+                    ?: expiry
+
+            if (
+                contractExpiry.isNotBlank() &&
+                !expiryMatches(
+                    contractExpiry,
+                    expiry
+                )
+            ) {
+                continue
+            }
+
+            val strike =
+                firstDouble(
+                    row,
+                    listOf(
+                        "strikePrice",
+                        "Strike_Price",
+                        "StrikePrice",
+                        "strike",
+                        "Strike"
+                    )
+                )
+
+            if (strike <= 0.0) {
+                continue
+            }
+
+            val ce =
+                row.optJSONObject("CE")
+                    ?: row.optJSONObject("ce")
+                    ?: row.optJSONObject("CALL")
+                    ?: row.optJSONObject("call")
+
+            val pe =
+                row.optJSONObject("PE")
+                    ?: row.optJSONObject("pe")
+                    ?: row.optJSONObject("PUT")
+                    ?: row.optJSONObject("put")
+
+            /*
+             * Some BSE responses store call/put fields
+             * directly in the row rather than under CE/PE.
+             */
+            val callOi =
+                if (ce != null) {
+
+                    firstDouble(
+                        ce,
+                        listOf(
+                            "openInterest",
+                            "Open_Interest",
+                            "OpenInterest",
+                            "OI"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "C_Open_Interest",
+                            "callOi",
+                            "CallOI"
+                        )
+                    )
+                }
+
+            val putOi =
+                if (pe != null) {
+
+                    firstDouble(
+                        pe,
+                        listOf(
+                            "openInterest",
+                            "Open_Interest",
+                            "OpenInterest",
+                            "OI"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "Open_Interest",
+                            "putOi",
+                            "PutOI"
+                        )
+                    )
+                }
+
+            val callVolume =
+                if (ce != null) {
+
+                    firstDouble(
+                        ce,
+                        listOf(
+                            "totalTradedVolume",
+                            "Vol_Traded",
+                            "volume",
+                            "Volume"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "C_Vol_Traded",
+                            "callVolume",
+                            "CallVolume"
+                        )
+                    )
+                }
+
+            val putVolume =
+                if (pe != null) {
+
+                    firstDouble(
+                        pe,
+                        listOf(
+                            "totalTradedVolume",
+                            "Vol_Traded",
+                            "volume",
+                            "Volume"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "Vol_Traded",
+                            "putVolume",
+                            "PutVolume"
+                        )
+                    )
+                }
+
+            val callIv =
+                if (ce != null) {
+
+                    firstDouble(
+                        ce,
+                        listOf(
+                            "impliedVolatility",
+                            "IV",
+                            "C_IV"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "C_IV",
+                            "callIv"
+                        )
+                    )
+                }
+
+            val putIv =
+                if (pe != null) {
+
+                    firstDouble(
+                        pe,
+                        listOf(
+                            "impliedVolatility",
+                            "IV",
+                            "IV"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "IV",
+                            "putIv"
+                        )
+                    )
+                }
+
+            val callLtp =
+                if (ce != null) {
+
+                    firstDouble(
+                        ce,
+                        listOf(
+                            "lastPrice",
+                            "Last_Trd_Price",
+                            "LTP",
+                            "ltp"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "C_Last_Trd_Price",
+                            "callLtp"
+                        )
+                    )
+                }
+
+            val putLtp =
+                if (pe != null) {
+
+                    firstDouble(
+                        pe,
+                        listOf(
+                            "lastPrice",
+                            "Last_Trd_Price",
+                            "LTP",
+                            "ltp"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "Last_Trd_Price",
+                            "putLtp"
+                        )
+                    )
+                }
+
+            val callOiChange =
+                if (ce != null) {
+
+                    firstDouble(
+                        ce,
+                        listOf(
+                            "changeinOpenInterest",
+                            "Absolute_Change_OI",
+                            "ChgInOI"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "C_Absolute_Change_OI",
+                            "callOiChange"
+                        )
+                    )
+                }
+
+            val putOiChange =
+                if (pe != null) {
+
+                    firstDouble(
+                        pe,
+                        listOf(
+                            "changeinOpenInterest",
+                            "Absolute_Change_OI",
+                            "ChgInOI"
+                        )
+                    )
+
+                } else {
+
+                    firstDouble(
+                        row,
+                        listOf(
+                            "Absolute_Change_OI",
+                            "putOiChange"
+                        )
+                    )
+                }
+
+            contracts.add(
+
+                OptionContract(
+
+                    strikePrice =
+                        strike,
+
+                    expiryDate =
+                        contractExpiry,
+
+                    callOi =
+                        callOi,
+
+                    callOiChange =
+                        callOiChange,
+
+                    callVolume =
+                        callVolume,
+
+                    callIv =
+                        callIv,
+
+                    callLtp =
+                        callLtp,
+
+                    putOi =
+                        putOi,
+
+                    putOiChange =
+                        putOiChange,
+
+                    putVolume =
+                        putVolume,
+
+                    putIv =
+                        putIv,
+
+                    putLtp =
+                        putLtp
+                )
+            )
+        }
+
+        if (contracts.isEmpty()) {
+
+            throw BseApiException(
+                "BSE JSON contained no option contracts"
+            )
+        }
+
+        return OptionChain(
+
+            underlyingValue =
+                underlying,
+
+            timestamp =
+                timestamp,
+
+            contracts =
+                contracts
+        )
+    }
+
+    /**
+     * Extracts expiry dates from arbitrary BSE JSON.
+     */
+    private fun extractExpiryDates(
+        body: String
+    ): List<String> {
+
+        val result =
+            mutableListOf<String>()
+
+        /*
+         * JSON parsing first.
+         */
+        try {
+
+            val root =
+                JSONObject(body)
+
+            findExpiryValues(
+                root,
+                result
+            )
+
+        } catch (_: Exception) {
+
+            /*
+             * BSE may return HTML.
+             */
+        }
+
+        /*
+         * HTML fallback.
+         */
+        if (result.isEmpty()) {
+
+            val regex =
+                Regex(
+                    """\b\d{1,2}[-/][A-Za-z]{3}[-/]\d{4}\b"""
+                )
+
+            regex.findAll(body)
+                .forEach { match ->
+
+                    result.add(
+                        match.value
+                    )
+                }
+        }
+
+        return result
+            .map {
+                it.trim()
+            }
+            .filter {
+                it.isNotBlank()
+            }
+            .distinct()
+    }
+
+    /**
+     * Recursively searches JSON for fields whose name
+     * contains "expiry".
+     */
+    private fun findExpiryValues(
+        value: Any?,
+        output: MutableList<String>
+    ) {
+
+        when (value) {
+
+            is JSONObject -> {
+
+                val keys =
+                    value.keys()
+
+                while (keys.hasNext()) {
+
+                    val key =
+                        keys.next()
+
+                    val child =
+                        value.opt(key)
+
+                    if (
+                        key.contains(
+                            "expiry",
+                            ignoreCase = true
+                        )
+                    ) {
+
+                        when (child) {
+
+                            is JSONArray -> {
+
+                                for (
+                                    i in
+                                    0 until
+                                    child.length()
+                                ) {
+
+                                    val item =
+                                        child.optString(
+                                            i
+                                        )
+
+                                    if (
+                                        item.isNotBlank()
+                                    ) {
+                                        output.add(
+                                            item
+                                        )
+                                    }
+                                }
+                            }
+
+                            is String -> {
+
+                                if (
+                                    child.isNotBlank()
+                                ) {
+                                    output.add(
+                                        child
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    findExpiryValues(
+                        child,
+                        output
+                    )
+                }
+            }
+
+            is JSONArray -> {
+
+                for (
+                    i in
+                    0 until
+                    value.length()
+                ) {
+
+                    findExpiryValues(
+                        value.opt(i),
+                        output
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Extracts JSON objects embedded inside HTML/JS.
+     */
+    private fun extractJsonObjects(
+        html: String
+    ): List<JSONObject> {
+
+        val result =
+            mutableListOf<JSONObject>()
+
+        /*
+         * First try the entire response.
+         */
+        try {
+
+            result.add(
+                JSONObject(html)
+            )
+
+        } catch (_: Exception) {
+        }
+
+        /*
+         * Look for common JavaScript variables.
+         */
+        val markers =
+            listOf(
+                "DerivOptChain",
+                "optionChain",
+                "OptionChain",
+                "deriv",
+                "data"
+            )
+
+        for (marker in markers) {
+
+            var position =
+                html.indexOf(marker)
+
+            while (position >= 0) {
+
+                val start =
+                    html.indexOf(
+                        "{",
+                        position
+                    )
+
+                if (start < 0) {
+                    break
+                }
+
+                val candidate =
+                    extractBalancedJson(
+                        html,
+                        start
+                    )
+
+                if (candidate != null) {
+
+                    try {
+
+                        result.add(
+                            JSONObject(candidate)
+                        )
+
+                    } catch (_: Exception) {
+                    }
+                }
+
+                position =
+                    html.indexOf(
+                        marker,
+                        position + marker.length
+                    )
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Extracts a balanced {...} JSON object.
+     */
+    private fun extractBalancedJson(
+        text: String,
+        start: Int
+    ): String? {
+
+        var depth = 0
+        var inString = false
+        var escaped = false
+
+        for (
+            i in
+            start until text.length
+        ) {
+
+            val c =
+                text[i]
+
+            if (inString) {
+
+                if (escaped) {
+
+                    escaped = false
+
+                } else if (c == '\\') {
+
+                    escaped = true
+
+                } else if (c == '"') {
+
+                    inString = false
+                }
+
+                continue
+            }
+
+            if (c == '"') {
+
+                inString = true
+                continue
+            }
+
+            if (c == '{') {
+
+                depth++
+
+            } else if (c == '}') {
+
+                depth--
+
+                if (depth == 0) {
+
+                    return text.substring(
+                        start,
+                        i + 1
+                    )
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun firstString(
+        obj: JSONObject,
+        names: List<String>
+    ): String? {
+
+        for (name in names) {
+
+            if (!obj.has(name)) {
+                continue
+            }
+
+            val value =
+                obj.optString(
+                    name,
+                    ""
+                )
+
+            if (value.isNotBlank()) {
+
+                return value
+            }
+        }
+
+        return null
+    }
+
+    private fun firstDouble(
+        obj: JSONObject,
+        names: List<String>
+    ): Double {
+
+        for (name in names) {
+
+            if (!obj.has(name)) {
+                continue
+            }
+
+            val value =
+                obj.opt(name)
+
+            when (value) {
+
+                is Number ->
+                    return value.toDouble()
+
+                is String -> {
+
+                    val cleaned =
+                        value
+                            .replace(
+                                ",",
+                                ""
+                            )
+                            .trim()
+
+                    cleaned
+                        .toDoubleOrNull()
+                        ?.let {
+                            return it
+                        }
+                }
+            }
+        }
+
+        return 0.0
+    }
+
+    /**
+     * Compares expiry strings while allowing differences
+     * in formatting.
+     */
+    private fun expiryMatches(
+        a: String,
+        b: String
+    ): Boolean {
+
+        if (
+            a.equals(
+                b,
+                ignoreCase = true
+            )
+        ) {
+            return true
+        }
+
+        val normalize: (
+            String
+        ) -> String = { value ->
+
+            value
+                .uppercase(Locale.US)
+                .replace(
+                    Regex("[^A-Z0-9]"),
+                    ""
+                )
+        }
+
+        return normalize(a) ==
+                normalize(b)
+    }
+
+    private fun now(): String {
+
+        return SimpleDateFormat(
+            "dd-MMM-yyyy HH:mm:ss",
+            Locale.US
+        ).format(
+            Date()
+        )
+    }
+
+    private fun encode(
+        value: String
+    ): String {
+
+        return URLEncoder.encode(
+            value,
+            "UTF-8"
+        )
+    }
+}
+
+class BseApiException(
+    message: String
+) : RuntimeException(message)
