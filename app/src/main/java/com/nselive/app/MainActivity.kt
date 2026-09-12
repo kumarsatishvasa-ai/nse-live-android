@@ -4,8 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -55,6 +56,12 @@ data class NseMetrics(
     val error: String? = null
 )
 
+enum class MarketSegment {
+    NSE,
+    BSE,
+    MCX
+}
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,7 +69,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                MarketLiveScreen()
+                NseLiveScreen()
             }
         }
     }
@@ -70,45 +77,29 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MarketLiveScreen() {
+fun NseLiveScreen() {
 
-    /*
-     * ---------------------------------------------------------
-     * MARKET SELECTION
-     * ---------------------------------------------------------
-     */
-
-    var selectedMarket by remember {
-        mutableStateOf("NSE")
+    var selectedSegment by remember {
+        mutableStateOf(MarketSegment.NSE)
     }
-
-    /*
-     * ---------------------------------------------------------
-     * SYMBOL SELECTION
-     * ---------------------------------------------------------
-     */
 
     var selectedSymbol by remember {
         mutableStateOf("NIFTY")
     }
 
-    /*
-     * ---------------------------------------------------------
-     * EXPIRY SELECTION
-     * ---------------------------------------------------------
-     */
-
     var selectedExpiry by remember {
         mutableStateOf("")
     }
 
-    /*
-     * ---------------------------------------------------------
-     * DROPDOWN STATES
-     * ---------------------------------------------------------
-     */
+    var expiryOptions by remember {
+        mutableStateOf<List<String>>(emptyList())
+    }
 
-    var marketMenuExpanded by remember {
+    var metrics by remember {
+        mutableStateOf(NseMetrics())
+    }
+
+    var loading by remember {
         mutableStateOf(false)
     }
 
@@ -120,113 +111,88 @@ fun MarketLiveScreen() {
         mutableStateOf(false)
     }
 
-    /*
-     * ---------------------------------------------------------
-     * NSE SYMBOLS
-     * ---------------------------------------------------------
-     */
+    val api = remember {
+        NseApi()
+    }
 
-    val nseSymbols = listOf(
-        "NIFTY",
-        "BANKNIFTY",
-        "NIFTYNXT50",
-        "FINNIFTY"
-    )
+    val symbols = when (selectedSegment) {
 
-    /*
-     * ---------------------------------------------------------
-     * MCX SYMBOLS
-     * ---------------------------------------------------------
-     */
+        MarketSegment.NSE -> listOf(
+            "NIFTY",
+            "BANKNIFTY",
+            "NIFTYNXT50",
+            "FINNIFTY"
+        )
 
-    val mcxSymbols = listOf(
-        "CRUDEOIL",
-        "NATURALGAS",
-        "SILVER",
-        "GOLD",
-        "GOLDM",
-        "SILVERM"
-    )
+        MarketSegment.BSE -> listOf(
+            "SENSEX",
+            "BANKEX",
+            "BSEFOCUSED"
+        )
 
-    /*
-     * ---------------------------------------------------------
-     * BSE SYMBOLS
-     * ---------------------------------------------------------
-     */
-
-    val bseSymbols = listOf(
-        "SENSEX",
-        "BANKEX",
-        "BSEFOCUSED"
-    )
+        MarketSegment.MCX -> listOf(
+            "CRUDEOIL",
+            "NATURALGAS",
+            "SILVER",
+            "GOLD",
+            "GOLDM",
+            "SILVERM"
+        )
+    }
 
     /*
-     * ---------------------------------------------------------
-     * SELECT SYMBOL LIST
-     * ---------------------------------------------------------
+     * Load expiry dates whenever the market segment or
+     * symbol changes.
+     *
+     * Currently the NseApi supplied in the project supports
+     * NSE option-chain expiry retrieval.
      */
+    LaunchedEffect(selectedSegment, selectedSymbol) {
 
-    val availableSymbols =
-        when (selectedMarket) {
-
-            "NSE" -> nseSymbols
-
-            "BSE" -> bseSymbols
-
-            "MCX" -> mcxSymbols
-
-            else -> nseSymbols
-        }
-
-    /*
-     * ---------------------------------------------------------
-     * RESET SYMBOL WHEN MARKET CHANGES
-     * ---------------------------------------------------------
-     */
-
-    LaunchedEffect(selectedMarket) {
-
-        selectedSymbol =
-            availableSymbols.first()
-
+        expiryOptions = emptyList()
         selectedExpiry = ""
+
+        if (selectedSegment == MarketSegment.NSE) {
+
+            try {
+
+                val expiries =
+                    api.getExpiries(selectedSymbol)
+
+                expiryOptions = expiries
+
+                if (expiries.isNotEmpty()) {
+                    selectedExpiry = expiries.first()
+                }
+
+            } catch (e: Exception) {
+
+                metrics = metrics.copy(
+                    error = e.message
+                        ?: "Unable to load expiry dates"
+                )
+            }
+        }
     }
 
     /*
-     * ---------------------------------------------------------
-     * METRICS
-     * ---------------------------------------------------------
-     */
-
-    var metrics by remember {
-        mutableStateOf(NseMetrics())
-    }
-
-    var loading by remember {
-        mutableStateOf(false)
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * LOAD NSE DATA
-     * ---------------------------------------------------------
+     * Load live NSE data.
      *
-     * Currently the NseApi is used for NSE.
-     *
-     * MCX/BSE can be connected to their APIs separately.
+     * BSE and MCX are displayed in the UI, but their
+     * data endpoints are not being called here yet.
      */
-
     LaunchedEffect(
-        selectedMarket,
+        selectedSegment,
         selectedSymbol,
         selectedExpiry
     ) {
 
-        if (selectedMarket != "NSE") {
+        if (
+            selectedSegment != MarketSegment.NSE ||
+            selectedExpiry.isBlank()
+        ) {
             return@LaunchedEffect
         }
-
-        val api = NseApi()
 
         while (true) {
 
@@ -234,59 +200,33 @@ fun MarketLiveScreen() {
 
             try {
 
-                val expiries =
-                    api.getExpiries(
-                        selectedSymbol
+                val optionChain =
+                    api.getOptionChain(
+                        symbol = selectedSymbol,
+                        expiry = selectedExpiry
                     )
 
-                if (expiries.isNotEmpty()) {
-
-                    if (
-                        selectedExpiry.isEmpty() ||
-                        selectedExpiry !in expiries
-                    ) {
-                        selectedExpiry =
-                            expiries.first()
+                val vix =
+                    try {
+                        api.getIndiaVix()
+                    } catch (_: Exception) {
+                        null
                     }
 
-                    val expiry =
-                        if (selectedExpiry.isNotEmpty()) {
-                            selectedExpiry
-                        } else {
-                            expiries.first()
-                        }
+                metrics =
+                    MetricsCalculator.calculate(
+                        chain = optionChain,
+                        vix = vix
+                    ).copy(
+                        error = null
+                    )
 
-                    val optionChain =
-                        api.getOptionChain(
-                            symbol = selectedSymbol,
-                            expiry = expiry
-                        )
-
-                    val vix =
-                        try {
-                            api.getIndiaVix()
-                        } catch (
-                            e: Exception
-                        ) {
-                            null
-                        }
-
-                    metrics =
-                        MetricsCalculator.calculate(
-                            chain = optionChain,
-                            vix = vix
-                        )
-                }
-
-            } catch (
-                e: Exception
-            ) {
+            } catch (e: Exception) {
 
                 metrics =
                     metrics.copy(
-                        error =
-                            e.message
-                                ?: "Failed to load NSE data"
+                        error = e.message
+                            ?: "Failed to load market data"
                     )
             }
 
@@ -295,12 +235,6 @@ fun MarketLiveScreen() {
             delay(30_000)
         }
     }
-
-    /*
-     * ---------------------------------------------------------
-     * SCREEN
-     * ---------------------------------------------------------
-     */
 
     Scaffold(
 
@@ -313,15 +247,13 @@ fun MarketLiveScreen() {
                     Column {
 
                         Text(
-                            text =
-                                "SATHISH KUMAR VASA",
-                            fontWeight =
-                                FontWeight.Bold
+                            text = "SATHISH KUMAR VASA",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
                         )
 
                         Text(
-                            text =
-                                "Option Analytics",
+                            text = "Option Analytics",
                             fontSize = 12.sp
                         )
                     }
@@ -343,11 +275,8 @@ fun MarketLiveScreen() {
         ) {
 
             /*
-             * -------------------------------------------------
              * LOGO
-             * -------------------------------------------------
              */
-
             item {
 
                 Image(
@@ -358,7 +287,7 @@ fun MarketLiveScreen() {
                         ),
 
                     contentDescription =
-                        "NSE Live",
+                        "SATHISH KUMAR VASA",
 
                     modifier =
                         Modifier
@@ -371,135 +300,112 @@ fun MarketLiveScreen() {
             }
 
             /*
-             * -------------------------------------------------
-             * MARKET RADIO BUTTONS
-             * -------------------------------------------------
+             * MARKET SEGMENT
              */
-
             item {
 
-                Text(
-                    text = "Market",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(
+                Card(
                     modifier =
-                        Modifier.height(4.dp)
-                )
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.SpaceEvenly
+                        Modifier.fillMaxWidth()
                 ) {
 
-                    MarketRadioButton(
-                        name = "NSE",
-                        selected =
-                            selectedMarket == "NSE"
+                    Column(
+                        modifier =
+                            Modifier.padding(12.dp)
                     ) {
 
-                        selectedMarket = "NSE"
+                        Text(
+                            text = "Market",
+                            fontWeight =
+                                FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
 
-                        marketMenuExpanded =
-                            false
+                        Spacer(
+                            modifier =
+                                Modifier.height(6.dp)
+                        )
 
-                        symbolMenuExpanded =
-                            false
+                        Row(
+                            modifier =
+                                Modifier.fillMaxWidth(),
+                            horizontalArrangement =
+                                Arrangement.SpaceEvenly
+                        ) {
 
-                        expiryMenuExpanded =
-                            false
+                            MarketRadioButton(
+                                text = "NSE",
+                                selected =
+                                    selectedSegment ==
+                                            MarketSegment.NSE,
+                                onClick = {
+
+                                    selectedSegment =
+                                        MarketSegment.NSE
+
+                                    selectedSymbol =
+                                        "NIFTY"
+
+                                    metrics =
+                                        NseMetrics()
+                                }
+                            )
+
+                            MarketRadioButton(
+                                text = "BSE",
+                                selected =
+                                    selectedSegment ==
+                                            MarketSegment.BSE,
+                                onClick = {
+
+                                    selectedSegment =
+                                        MarketSegment.BSE
+
+                                    selectedSymbol =
+                                        "SENSEX"
+
+                                    selectedExpiry =
+                                        ""
+
+                                    expiryOptions =
+                                        emptyList()
+
+                                    metrics =
+                                        NseMetrics()
+                                }
+                            )
+
+                            MarketRadioButton(
+                                text = "MCX",
+                                selected =
+                                    selectedSegment ==
+                                            MarketSegment.MCX,
+                                onClick = {
+
+                                    selectedSegment =
+                                        MarketSegment.MCX
+
+                                    selectedSymbol =
+                                        "CRUDEOIL"
+
+                                    selectedExpiry =
+                                        ""
+
+                                    expiryOptions =
+                                        emptyList()
+
+                                    metrics =
+                                        NseMetrics()
+                                }
+                            )
+                        }
                     }
-
-                    MarketRadioButton(
-                        name = "BSE",
-                        selected =
-                            selectedMarket == "BSE"
-                    ) {
-
-                        selectedMarket = "BSE"
-
-                        marketMenuExpanded =
-                            false
-
-                        symbolMenuExpanded =
-                            false
-
-                        expiryMenuExpanded =
-                            false
-                    }
-
-                    MarketRadioButton(
-                        name = "MCX",
-                        selected =
-                            selectedMarket == "MCX"
-                    ) {
-
-                        selectedMarket = "MCX"
-
-                        marketMenuExpanded =
-                            false
-
-                        symbolMenuExpanded =
-                            false
-
-                        expiryMenuExpanded =
-                            false
-                    )
                 }
             }
 
             /*
-             * -------------------------------------------------
-             * MARKET DROPDOWN
-             * -------------------------------------------------
-             */
-
-            item {
-
-                SimpleDropdown(
-
-                    label = "Market",
-
-                    selectedValue =
-                        selectedMarket,
-
-                    expanded =
-                        marketMenuExpanded,
-
-                    onExpandedChange = {
-
-                        marketMenuExpanded =
-                            !marketMenuExpanded
-                    },
-
-                    options =
-                        listOf(
-                            "NSE",
-                            "BSE",
-                            "MCX"
-                        ),
-
-                    onSelected = {
-
-                        selectedMarket = it
-
-                        marketMenuExpanded =
-                            false
-                    }
-                )
-            }
-
-            /*
-             * -------------------------------------------------
              * SYMBOL DROPDOWN
-             * -------------------------------------------------
              */
-
             item {
 
                 SimpleDropdown(
@@ -509,84 +415,106 @@ fun MarketLiveScreen() {
                     selectedValue =
                         selectedSymbol,
 
+                    options =
+                        symbols,
+
                     expanded =
                         symbolMenuExpanded,
 
                     onExpandedChange = {
-
-                        symbolMenuExpanded =
-                            !symbolMenuExpanded
+                        symbolMenuExpanded = it
                     },
 
-                    options =
-                        availableSymbols,
+                    onSelected = { symbol ->
 
-                    onSelected = {
+                        selectedSymbol = symbol
 
-                        selectedSymbol = it
+                        symbolMenuExpanded = false
 
-                        selectedExpiry = ""
-
-                        symbolMenuExpanded =
-                            false
+                        metrics =
+                            NseMetrics()
                     }
                 )
             }
 
             /*
-             * -------------------------------------------------
              * EXPIRY DROPDOWN
-             * -------------------------------------------------
              */
-
             item {
 
-                if (selectedMarket == "NSE") {
+                if (
+                    selectedSegment ==
+                            MarketSegment.NSE
+                ) {
 
                     SimpleDropdown(
 
                         label = "Expiry",
 
                         selectedValue =
-                            if (
-                                selectedExpiry.isEmpty()
-                            ) {
-                                "Loading expiry..."
-                            } else {
-                                selectedExpiry
+                            selectedExpiry.ifBlank {
+                                "Select expiry"
                             },
+
+                        options =
+                            expiryOptions,
 
                         expanded =
                             expiryMenuExpanded,
 
                         onExpandedChange = {
-
-                            expiryMenuExpanded =
-                                !expiryMenuExpanded
+                            expiryMenuExpanded = it
                         },
 
-                        options =
-                            getExpiryOptions(
-                                selectedExpiry
-                            ),
+                        onSelected = { expiry ->
 
-                        onSelected = {
-
-                            selectedExpiry = it
+                            selectedExpiry =
+                                expiry
 
                             expiryMenuExpanded =
                                 false
                         }
                     )
+
+                } else {
+
+                    Card(
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    ) {
+
+                        Column(
+                            modifier =
+                                Modifier.padding(16.dp)
+                        ) {
+
+                            Text(
+                                text = "Expiry",
+                                fontSize = 13.sp,
+                                color = Color.Gray
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(4.dp)
+                            )
+
+                            Text(
+                                text =
+                                    "Expiry data will be connected for ${
+                                        selectedSegment.name
+                                    }",
+                                fontWeight =
+                                    FontWeight.Medium
+                            )
+                        }
+                    }
                 }
             }
 
             /*
-             * -------------------------------------------------
              * LOADING
-             * -------------------------------------------------
              */
-
             item {
 
                 if (loading) {
@@ -604,7 +532,6 @@ fun MarketLiveScreen() {
                     ) {
 
                         CircularProgressIndicator(
-
                             modifier =
                                 Modifier
                                     .width(22.dp)
@@ -625,54 +552,36 @@ fun MarketLiveScreen() {
             }
 
             /*
-             * -------------------------------------------------
-             * NON-NSE MESSAGE
-             * -------------------------------------------------
+             * ERROR
              */
-
             item {
 
-                if (selectedMarket != "NSE") {
+                metrics.error?.let { error ->
 
                     Card(
                         modifier =
                             Modifier.fillMaxWidth()
                     ) {
 
-                        Column(
+                        Text(
+                            text = error,
+
                             modifier =
-                                Modifier.padding(16.dp)
-                        ) {
+                                Modifier.padding(16.dp),
 
-                            Text(
-                                text =
-                                    "$selectedMarket selected"
-                            )
+                            color =
+                                Color(0xFFD32F2F),
 
-                            Spacer(
-                                modifier =
-                                    Modifier.height(5.dp)
-                            )
-
-                            Text(
-                                text =
-                                    "The $selectedMarket data connection will be added next.",
-                                color =
-                                    Color.Gray,
-                                fontSize =
-                                    13.sp
-                            )
-                        }
+                            fontWeight =
+                                FontWeight.Medium
+                        )
                     }
                 }
             }
 
             /*
-             * -------------------------------------------------
              * METRICS
-             * -------------------------------------------------
              */
-
             item {
 
                 MetricCard(
@@ -762,11 +671,47 @@ fun MarketLiveScreen() {
             }
 
             /*
-             * -------------------------------------------------
              * LAST UPDATED
-             * -------------------------------------------------
              */
+            item {
 
+                Card(
+                    modifier =
+                        Modifier.fillMaxWidth()
+                ) {
+
+                    Column(
+                        modifier =
+                            Modifier.padding(16.dp)
+                    ) {
+
+                        Text(
+                            text = "Last Updated",
+                            fontSize = 13.sp,
+                            color = Color.Gray
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(4.dp)
+                        )
+
+                        Text(
+                            text =
+                                metrics.updatedAt,
+
+                            fontSize = 18.sp,
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            /*
+             * REFRESH STATUS
+             */
             item {
 
                 Card(
@@ -781,13 +726,10 @@ fun MarketLiveScreen() {
 
                         Text(
                             text =
-                                "Last Updated",
+                                "Live Market Connection",
 
-                            fontSize =
-                                13.sp,
-
-                            color =
-                                Color.Gray
+                            fontWeight =
+                                FontWeight.Bold
                         )
 
                         Spacer(
@@ -797,52 +739,42 @@ fun MarketLiveScreen() {
 
                         Text(
                             text =
-                                metrics.updatedAt,
+                                when {
 
-                            fontSize =
-                                18.sp,
+                                    selectedSegment ==
+                                            MarketSegment.NSE &&
+                                            !loading &&
+                                            metrics.error == null ->
+                                        "NSE data connected"
 
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-                    }
-                }
-            }
+                                    selectedSegment !=
+                                            MarketSegment.NSE ->
+                                        "${selectedSegment.name} UI ready — data API not connected yet"
 
-            /*
-             * -------------------------------------------------
-             * ERROR
-             * -------------------------------------------------
-             */
+                                    loading ->
+                                        "Connecting to NSE..."
 
-            item {
+                                    else ->
+                                        "NSE connection error"
+                                },
 
-                metrics.error?.let { error ->
-
-                    Card(
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
-
-                        Text(
-                            text =
-                                error,
-
-                            modifier =
-                                Modifier.padding(16.dp),
+                            fontSize = 13.sp,
 
                             color =
-                                Color(0xFFD32F2F)
+                                if (
+                                    selectedSegment ==
+                                        MarketSegment.NSE &&
+                                    metrics.error == null &&
+                                    !loading
+                                ) {
+                                    Color(0xFF2E7D32)
+                                } else {
+                                    Color.Gray
+                                }
                         )
                     }
                 }
             }
-
-            /*
-             * -------------------------------------------------
-             * REFRESH MESSAGE
-             * -------------------------------------------------
-             */
 
             item {
 
@@ -855,11 +787,9 @@ fun MarketLiveScreen() {
                     text =
                         "Auto-refresh: every 30 seconds",
 
-                    fontSize =
-                        12.sp,
+                    fontSize = 12.sp,
 
-                    color =
-                        Color.Gray
+                    color = Color.Gray
                 )
 
                 Spacer(
@@ -872,14 +802,11 @@ fun MarketLiveScreen() {
 }
 
 /*
- * =============================================================
- * MARKET RADIO BUTTON
- * =============================================================
+ * Radio button used for NSE / BSE / MCX.
  */
-
 @Composable
 private fun MarketRadioButton(
-    name: String,
+    text: String,
     selected: Boolean,
     onClick: () -> Unit
 ) {
@@ -897,167 +824,153 @@ private fun MarketRadioButton(
 
         RadioButton(
 
-            selected =
-                selected,
+            selected = selected,
 
-            onClick =
-                onClick
+            onClick = onClick
         )
 
         Text(
-            text = name,
-            fontWeight =
-                if (selected) {
-                    FontWeight.Bold
-                } else {
-                    FontWeight.Normal
-                }
+            text = text,
+            fontSize = 14.sp
         )
     }
 }
 
 /*
- * =============================================================
- * NORMAL DROPDOWN
+ * Safe dropdown implementation.
  *
  * IMPORTANT:
- * This does NOT use ExposedDropdownMenuBox.
- *
- * Therefore it avoids the FocusRequester crash.
- * =============================================================
+ * This intentionally does NOT use ExposedDropdownMenuBox.
+ * Therefore it avoids the FocusRequester crash you saw.
  */
-
 @Composable
 private fun SimpleDropdown(
     label: String,
     selectedValue: String,
-    expanded: Boolean,
-    onExpandedChange: () -> Unit,
     options: List<String>,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onSelected: (String) -> Unit
 ) {
 
-    Column(
+    Card(
         modifier =
             Modifier.fillMaxWidth()
     ) {
 
-        Text(
-            text = label,
-
-            fontSize =
-                13.sp,
-
-            color =
-                Color.Gray
-        )
-
-        Spacer(
+        Box(
             modifier =
-                Modifier.height(4.dp)
-        )
-
-        BoxDropdownButton(
-            text =
-                selectedValue,
-
-            expanded =
-                expanded,
-
-            onClick =
-                onExpandedChange
-        )
-
-        DropdownMenu(
-
-            expanded =
-                expanded,
-
-            onDismissRequest = {
-                onExpandedChange()
-            },
-
-            modifier =
-                Modifier.fillMaxWidth(0.9f)
+                Modifier.fillMaxWidth()
         ) {
 
-            options.forEach { option ->
+            Column(
 
-                DropdownMenuItem(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable {
 
-                    text = {
+                            if (options.isNotEmpty()) {
+                                onExpandedChange(!expanded)
+                            }
+                        }
+                        .padding(16.dp)
+            ) {
 
-                        Text(
-                            text = option
-                        )
-                    },
-
-                    onClick = {
-
-                        onSelected(option)
-                    }
+                Text(
+                    text = label,
+                    fontSize = 13.sp,
+                    color = Color.Gray
                 )
+
+                Spacer(
+                    modifier =
+                        Modifier.height(5.dp)
+                )
+
+                Row(
+
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    horizontalArrangement =
+                        Arrangement.SpaceBetween,
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+
+                    Text(
+                        text = selectedValue,
+                        fontSize = 17.sp,
+                        fontWeight =
+                            FontWeight.Medium
+                    )
+
+                    Text(
+                        text =
+                            if (expanded) {
+                                "▲"
+                            } else {
+                                "▼"
+                            },
+
+                        fontSize = 14.sp
+                    )
+                }
+            }
+
+            DropdownMenu(
+
+                expanded = expanded,
+
+                onDismissRequest = {
+                    onExpandedChange(false)
+                }
+            ) {
+
+                if (options.isEmpty()) {
+
+                    DropdownMenuItem(
+
+                        text = {
+                            Text(
+                                "No options available"
+                            )
+                        },
+
+                        onClick = {
+                            onExpandedChange(false)
+                        }
+                    )
+
+                } else {
+
+                    options.forEach { option ->
+
+                        DropdownMenuItem(
+
+                            text = {
+                                Text(option)
+                            },
+
+                            onClick = {
+
+                                onSelected(option)
+
+                                onExpandedChange(false)
+                            }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 /*
- * =============================================================
- * DROPDOWN BUTTON
- * =============================================================
+ * Metric card.
  */
-
-@Composable
-private fun BoxDropdownButton(
-    text: String,
-    expanded: Boolean,
-    onClick: () -> Unit
-) {
-
-    Button(
-
-        onClick =
-            onClick,
-
-        modifier =
-            Modifier.fillMaxWidth()
-    ) {
-
-        Row(
-
-            modifier =
-                Modifier.fillMaxWidth(),
-
-            horizontalArrangement =
-                Arrangement.SpaceBetween,
-
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Text(
-                text = text
-            )
-
-            Text(
-                text =
-                    if (expanded) {
-                        "▲"
-                    } else {
-                        "▼"
-                    }
-            )
-        }
-    }
-}
-
-/*
- * =============================================================
- * METRIC CARD
- * =============================================================
- */
-
 @Composable
 private fun MetricCard(
     name: String,
@@ -1088,8 +1001,7 @@ private fun MetricCard(
 
                 text = name,
 
-                fontSize =
-                    16.sp,
+                fontSize = 16.sp,
 
                 fontWeight =
                     FontWeight.Medium
@@ -1099,8 +1011,7 @@ private fun MetricCard(
 
                 text = value,
 
-                fontSize =
-                    18.sp,
+                fontSize = 18.sp,
 
                 fontWeight =
                     FontWeight.Bold
@@ -1110,39 +1021,8 @@ private fun MetricCard(
 }
 
 /*
- * =============================================================
- * EXPIRY OPTIONS
- * =============================================================
- *
- * The actual NSE expiry list is loaded by NseApi.
- *
- * The currently selected expiry is kept here so the dropdown
- * remains usable even before the first API response arrives.
- * =============================================================
+ * Number formatting.
  */
-
-private fun getExpiryOptions(
-    selectedExpiry: String
-): List<String> {
-
-    return if (selectedExpiry.isNotEmpty()) {
-
-        listOf(selectedExpiry)
-
-    } else {
-
-        listOf(
-            "Loading expiry..."
-        )
-    }
-}
-
-/*
- * =============================================================
- * NUMBER FORMAT
- * =============================================================
- */
-
 private fun formatMetric(
     value: Double?
 ): String {
