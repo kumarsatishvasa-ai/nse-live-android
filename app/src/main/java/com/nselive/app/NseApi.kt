@@ -1,6 +1,4 @@
-```kotlin
 package com.nselive.app
-
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
@@ -405,4 +403,3 @@ class NseApi {
 class NseApiException(
     message: String
 ) : RuntimeException(message)
-```
