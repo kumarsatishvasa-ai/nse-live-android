@@ -58,19 +58,15 @@ class NseApi {
             }
 
             override fun loadForRequest(
-                url: HttpUrl
-            ): List<Cookie> {
+    url: HttpUrl
+): List<Cookie> {
+    return this@NseApi.cookies[url.host]
+        ?.filter { cookie ->
+            cookie.expiresAt > System.currentTimeMillis()
+        }
+        ?: emptyList()
+}
 
-                val saved =
-                    this@NseApi.cookies[url.host]
-                        ?: return emptyList()
-
-                val now =
-                    System.currentTimeMillis()
-
-                return saved.filter {
-                    !it.expired &&
-                            it.expiresAt > now
                 }
             }
         }
@@ -196,6 +192,34 @@ class NseApi {
      * Open NSE pages first so NSE can establish
      * the required session cookies.
      */
+     private val cookies =
+    mutableMapOf<String, MutableList<Cookie>>()
+
+private val cookieJar = object : CookieJar {
+
+    override fun saveFromResponse(
+        url: HttpUrl,
+        cookies: List<Cookie>
+    ) {
+        this@NseApi.cookies[url.host] =
+            cookies.toMutableList()
+    }
+
+    override fun loadForRequest(
+        url: HttpUrl
+    ): List<Cookie> {
+
+        val now =
+            System.currentTimeMillis()
+
+        return this@NseApi.cookies[url.host]
+            ?.filter { cookie ->
+                cookie.expiresAt > now
+            }
+            ?: emptyList()
+    }
+}
+
     private suspend fun prime() {
 
         try {
