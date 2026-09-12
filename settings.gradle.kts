@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NSELive"
+rootProject.name = "SATHISH KUMAR VASA Option Analytics"
 include(":app")
