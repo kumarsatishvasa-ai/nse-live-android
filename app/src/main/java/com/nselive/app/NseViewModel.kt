@@ -1,6 +1,4 @@
-```kotlin
 package com.nselive.app
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -153,4 +151,3 @@ class NseViewModel : ViewModel() {
         }
     }
 }
-```
