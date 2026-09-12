@@ -125,7 +125,7 @@ item {
         contentDescription = "SATHISH KUMAR VASA",
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp),
+            .height(90.dp),
         contentScale = ContentScale.Fit
     )
 }
