@@ -1,4 +1,3 @@
-```kotlin
 package com.nselive.app
 
 class NseRepository(
@@ -41,4 +40,3 @@ class NseRepository(
         )
     }
 }
-```
