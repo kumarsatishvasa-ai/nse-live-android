@@ -119,6 +119,16 @@ fun NseLiveScreen() {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+item {
+    Image(
+        painter = painterResource(id = R.drawable.nse_logo),
+        contentDescription = "SATHISH KUMAR VASA",
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp),
+        contentScale = ContentScale.Fit
+    )
+}
 
             item {
                 Spacer(modifier = Modifier.height(8.dp))
