@@ -37,13 +37,14 @@ class NseApi {
             "$BASE_URL/api/option-chain-contract-info"
     }
 
-
     /*
-     * NSE uses cookies during normal browser requests.
+     * ---------------------------------------------------------
+     * COOKIE STORAGE
+     * ---------------------------------------------------------
      */
+
     private val cookies =
         mutableMapOf<String, MutableList<Cookie>>()
-
 
     private val cookieJar =
         object : CookieJar {
@@ -56,22 +57,30 @@ class NseApi {
                     cookies.toMutableList()
             }
 
-
             override fun loadForRequest(
                 url: HttpUrl
             ): List<Cookie> {
 
+                val savedCookies =
+                    this@NseApi.cookies[url.host]
+                        ?: return emptyList()
+
                 val now =
                     System.currentTimeMillis()
 
-                return this@NseApi.cookies[url.host]
-                    ?.filter { cookie ->
-                        cookie.expiresAt > now
-                    }
-                    ?: emptyList()
+                return savedCookies.filter {
+                    it.expiresAt > now &&
+                            !it.hostOnly ||
+                            it.matches(url)
+                }
             }
         }
 
+    /*
+     * ---------------------------------------------------------
+     * HTTP CLIENT
+     * ---------------------------------------------------------
+     */
 
     private val client =
         OkHttpClient.Builder()
@@ -89,12 +98,16 @@ class NseApi {
                 TimeUnit.SECONDS
             )
             .retryOnConnectionFailure(true)
+            .followRedirects(true)
+            .followSslRedirects(true)
             .build()
 
-
     /*
-     * Browser-like headers.
+     * ---------------------------------------------------------
+     * NSE HEADERS
+     * ---------------------------------------------------------
      */
+
     private val headers =
         mapOf(
 
@@ -111,20 +124,29 @@ class NseApi {
                     "no-cache",
 
             "User-Agent" to
-                    "Mozilla/5.0 (Linux; Android 14) " +
+                    "Mozilla/5.0 " +
+                    "(Linux; Android 14; Mobile) " +
                     "AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) " +
                     "Chrome/124.0.0.0 " +
                     "Mobile Safari/537.36",
 
-            "X-Requested-With" to
-                    "XMLHttpRequest"
+            "Sec-Fetch-Dest" to
+                    "empty",
+
+            "Sec-Fetch-Mode" to
+                    "cors",
+
+            "Sec-Fetch-Site" to
+                    "same-origin"
         )
 
-
     /*
-     * Generic GET request.
+     * ---------------------------------------------------------
+     * BASIC GET REQUEST
+     * ---------------------------------------------------------
      */
+
     private suspend fun get(
         url: String,
         referer: String
@@ -141,18 +163,16 @@ class NseApi {
                     )
 
             headers.forEach { (key, value) ->
-
                 builder.header(
                     key,
                     value
                 )
             }
 
+            val request =
+                builder.build()
 
-            client
-                .newCall(
-                    builder.build()
-                )
+            client.newCall(request)
                 .execute()
                 .use { response ->
 
@@ -163,12 +183,16 @@ class NseApi {
                     if (!response.isSuccessful) {
 
                         throw NseApiException(
-                            "NSE HTTP ${response.code}: ${body.take(200)}"
+                            "NSE HTTP ${response.code}: " +
+                                    if (body.length > 300) {
+                                        body.take(300)
+                                    } else {
+                                        body
+                                    }
                         )
                     }
 
                     if (body.isBlank()) {
-
                         throw NseApiException(
                             "NSE returned an empty response"
                         )
@@ -178,99 +202,147 @@ class NseApi {
                 }
         }
 
-
     /*
-     * Establish NSE cookies before API requests.
+     * ---------------------------------------------------------
+     * PRIME NSE SESSION
+     * ---------------------------------------------------------
+     *
+     * NSE may require cookies/session information before
+     * requesting the API endpoint.
+     * ---------------------------------------------------------
      */
-    private suspend fun prime() {
 
+    private suspend fun primeNseSession() {
+
+        /*
+         * First request NSE home page.
+         */
         try {
 
             get(
-                HOME_PAGE,
-                HOME_PAGE
-            )
-
-            get(
-                OPTION_CHAIN_PAGE,
-                HOME_PAGE
+                url = HOME_PAGE,
+                referer = HOME_PAGE
             )
 
         } catch (e: Exception) {
 
             /*
-             * Do not stop here.
-             *
-             * The actual API request will determine
-             * whether NSE is accessible.
+             * Do not immediately fail.
+             * The API request below may still work.
+             */
+        }
+
+        /*
+         * Second request option-chain page.
+         */
+        try {
+
+            get(
+                url = OPTION_CHAIN_PAGE,
+                referer = HOME_PAGE
+            )
+
+        } catch (e: Exception) {
+
+            /*
+             * Actual API request will determine whether
+             * the session is usable.
              */
         }
     }
 
-
     /*
-     * Get NIFTY expiry dates.
+     * ---------------------------------------------------------
+     * GET EXPIRY DATES
+     * ---------------------------------------------------------
      */
+
     suspend fun getExpiries(
         symbol: String = "NIFTY"
     ): List<String> {
 
-        prime()
+        primeNseSession()
+
+        val encodedSymbol =
+            encode(symbol)
 
         val url =
             CONTRACT_INFO_URL +
-                    "?symbol=${encode(symbol)}" +
+                    "?symbol=$encodedSymbol" +
                     "&_=${System.currentTimeMillis()}"
-
 
         val json =
             get(
-                url,
-                OPTION_CHAIN_PAGE
+                url = url,
+                referer = OPTION_CHAIN_PAGE
             )
 
+        return parseExpiryDates(json)
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * PARSE EXPIRY DATES
+     * ---------------------------------------------------------
+     */
+
+    private fun parseExpiryDates(
+        json: String
+    ): List<String> {
 
         val root =
-            JSONObject(json)
+            try {
+                JSONObject(json)
+            } catch (e: Exception) {
 
+                throw NseApiException(
+                    "NSE expiry response is not JSON: " +
+                            json.take(300)
+                )
+            }
 
         val result =
             mutableListOf<String>()
 
-
         /*
-         * Some NSE responses put expiryDates
-         * at the root.
+         * Possible format:
+         *
+         * {
+         *   "expiryDates": [...]
+         * }
          */
-        val rootExpiryDates =
+
+        val rootExpiry =
             root.optJSONArray(
                 "expiryDates"
             )
 
+        if (rootExpiry != null) {
 
-        if (rootExpiryDates != null) {
-
-            for (
-                i in
-                0 until rootExpiryDates.length()
-            ) {
+            for (i in 0 until rootExpiry.length()) {
 
                 val expiry =
-                    rootExpiryDates
-                        .optString(i)
-                        .trim()
+                    rootExpiry.optString(
+                        i,
+                        ""
+                    ).trim()
 
                 if (expiry.isNotEmpty()) {
-
                     result.add(expiry)
                 }
             }
         }
 
-
         /*
-         * Other responses put them inside records.
+         * Possible format:
+         *
+         * {
+         *   "records": {
+         *       "expiryDates": [...]
+         *   }
+         * }
          */
+
         if (result.isEmpty()) {
 
             val records =
@@ -278,202 +350,151 @@ class NseApi {
                     "records"
                 )
 
-
-            val recordsExpiryDates =
+            val recordsExpiry =
                 records?.optJSONArray(
                     "expiryDates"
                 )
 
-
-            if (recordsExpiryDates != null) {
+            if (recordsExpiry != null) {
 
                 for (
-                    i in
-                    0 until recordsExpiryDates.length()
+                    i in 0 until recordsExpiry.length()
                 ) {
 
                     val expiry =
-                        recordsExpiryDates
-                            .optString(i)
-                            .trim()
+                        recordsExpiry.optString(
+                            i,
+                            ""
+                        ).trim()
 
                     if (expiry.isNotEmpty()) {
-
                         result.add(expiry)
                     }
                 }
             }
         }
 
+        /*
+         * Possible format:
+         *
+         * {
+         *   "data": [...]
+         * }
+         *
+         * Try to extract expiryDate from rows.
+         */
+
+        if (result.isEmpty()) {
+
+            val data =
+                root.optJSONArray("data")
+
+            if (data != null) {
+
+                for (
+                    i in 0 until data.length()
+                ) {
+
+                    val row =
+                        data.optJSONObject(i)
+                            ?: continue
+
+                    val expiry =
+                        row.optString(
+                            "expiryDate",
+                            ""
+                        ).trim()
+
+                    if (
+                        expiry.isNotEmpty() &&
+                        !result.contains(expiry)
+                    ) {
+                        result.add(expiry)
+                    }
+                }
+            }
+        }
 
         if (result.isEmpty()) {
 
             throw NseApiException(
-                "NSE returned no NIFTY expiry dates"
+                "NSE returned no expiry dates. " +
+                        "Response: ${json.take(500)}"
             )
         }
 
-
-        return result.distinct()
+        return result
+            .distinct()
     }
 
-
     /*
-     * Get NIFTY option chain.
+     * ---------------------------------------------------------
+     * GET OPTION CHAIN
+     * ---------------------------------------------------------
      */
+
     suspend fun getOptionChain(
         symbol: String = "NIFTY",
         expiry: String
     ): OptionChain {
 
-        prime()
+        primeNseSession()
 
+        val encodedSymbol =
+            encode(symbol)
 
-        val timestamp =
-            System.currentTimeMillis()
-
+        val encodedExpiry =
+            encode(expiry)
 
         val url =
             OPTION_CHAIN_URL +
                     "?type=Indices" +
-                    "&symbol=${encode(symbol)}" +
-                    "&expiry=${encode(expiry)}" +
-                    "&_=$timestamp"
-
+                    "&symbol=$encodedSymbol" +
+                    "&expiry=$encodedExpiry" +
+                    "&_=${System.currentTimeMillis()}"
 
         val json =
             get(
-                url,
-                OPTION_CHAIN_PAGE
+                url = url,
+                referer = OPTION_CHAIN_PAGE
             )
-
 
         return parseOptionChain(json)
     }
 
-
     /*
-     * Get India VIX.
+     * ---------------------------------------------------------
+     * PARSE OPTION CHAIN
+     * ---------------------------------------------------------
      */
-    suspend fun getIndiaVix(): IndiaVix {
 
-        prime()
-
-
-        val url =
-            ALL_INDICES_URL +
-                    "?_=${System.currentTimeMillis()}"
-
-
-        val json =
-            get(
-                url,
-                "$BASE_URL/market-data/live-market-indices"
-            )
-
-
-        val root =
-            JSONObject(json)
-
-
-        val data =
-            root.optJSONArray("data")
-                ?: throw NseApiException(
-                    "NSE India VIX response has no data"
-                )
-
-
-        for (
-            i in
-            0 until data.length()
-        ) {
-
-            val row =
-                data.optJSONObject(i)
-                    ?: continue
-
-
-            val index =
-                row.optString(
-                    "index",
-                    ""
-                )
-                    .trim()
-                    .uppercase(Locale.US)
-
-
-            if (
-                index == "INDIA VIX" ||
-                index == "INDIA VIX "
-            ) {
-
-                val value =
-                    row.optDouble(
-                        "last",
-                        Double.NaN
-                    )
-
-
-                if (value.isNaN()) {
-
-                    throw NseApiException(
-                        "India VIX value was not returned by NSE"
-                    )
-                }
-
-
-                return IndiaVix(
-
-                    value = value,
-
-                    changePct =
-                        row.optDouble(
-                            "percentChange",
-                            0.0
-                        ),
-
-                    open =
-                        row.optDouble(
-                            "open",
-                            0.0
-                        )
-                )
-            }
-        }
-
-
-        throw NseApiException(
-            "India VIX was not found in NSE response"
-        )
-    }
-
-
-    /*
-     * Parse option-chain JSON.
-     */
     private fun parseOptionChain(
         json: String
     ): OptionChain {
 
         val root =
-            JSONObject(json)
+            try {
+                JSONObject(json)
+            } catch (e: Exception) {
 
+                throw NseApiException(
+                    "NSE option-chain response is not JSON: " +
+                            json.take(500)
+                )
+            }
 
         val records =
             root.optJSONObject(
                 "records"
             )
                 ?: throw NseApiException(
-                    "NSE response has no records"
+                    "NSE response has no records. " +
+                            "Response: ${json.take(500)}"
                 )
 
-
-        val timestamp =
-            records.optString(
-                "timestamp",
-                now()
-            )
-
+        /*
+         * Underlying NIFTY value.
+         */
 
         val underlying =
             records.optDouble(
@@ -481,6 +502,21 @@ class NseApi {
                 0.0
             )
 
+        /*
+         * NSE timestamp.
+         */
+
+        val timestamp =
+            records.optString(
+                "timestamp",
+                ""
+            ).ifBlank {
+                currentTime()
+            }
+
+        /*
+         * Option-chain rows.
+         */
 
         val data =
             records.optJSONArray(
@@ -490,20 +526,16 @@ class NseApi {
                     "NSE response has no option-chain data"
                 )
 
-
         val contracts =
             mutableListOf<OptionContract>()
 
-
         for (
-            i in
-            0 until data.length()
+            i in 0 until data.length()
         ) {
 
             val row =
                 data.optJSONObject(i)
                     ?: continue
-
 
             val strike =
                 row.optDouble(
@@ -511,6 +543,9 @@ class NseApi {
                     0.0
                 )
 
+            if (strike <= 0.0) {
+                continue
+            }
 
             val expiry =
                 row.optString(
@@ -518,22 +553,21 @@ class NseApi {
                     ""
                 )
 
-
-            if (strike <= 0.0) {
-                continue
-            }
-
+            /*
+             * Call data.
+             */
 
             val ce =
                 row.optJSONObject("CE")
 
+            /*
+             * Put data.
+             */
 
             val pe =
                 row.optJSONObject("PE")
 
-
-            contracts.add(
-
+            val contract =
                 OptionContract(
 
                     strikePrice =
@@ -542,13 +576,11 @@ class NseApi {
                     expiryDate =
                         expiry,
 
-
                     callOi =
                         ce?.optDouble(
                             "openInterest",
                             0.0
                         ) ?: 0.0,
-
 
                     callOiChange =
                         ce?.optDouble(
@@ -556,13 +588,11 @@ class NseApi {
                             0.0
                         ) ?: 0.0,
 
-
                     callVolume =
                         ce?.optDouble(
                             "totalTradedVolume",
                             0.0
                         ) ?: 0.0,
-
 
                     callIv =
                         ce?.optDouble(
@@ -570,13 +600,11 @@ class NseApi {
                             0.0
                         ) ?: 0.0,
 
-
                     callLtp =
                         ce?.optDouble(
                             "lastPrice",
                             0.0
                         ) ?: 0.0,
-
 
                     putOi =
                         pe?.optDouble(
@@ -584,13 +612,11 @@ class NseApi {
                             0.0
                         ) ?: 0.0,
 
-
                     putOiChange =
                         pe?.optDouble(
                             "changeinOpenInterest",
                             0.0
                         ) ?: 0.0,
-
 
                     putVolume =
                         pe?.optDouble(
@@ -598,13 +624,11 @@ class NseApi {
                             0.0
                         ) ?: 0.0,
 
-
                     putIv =
                         pe?.optDouble(
                             "impliedVolatility",
                             0.0
                         ) ?: 0.0,
-
 
                     putLtp =
                         pe?.optDouble(
@@ -612,17 +636,16 @@ class NseApi {
                             0.0
                         ) ?: 0.0
                 )
-            )
-        }
 
+            contracts.add(contract)
+        }
 
         if (contracts.isEmpty()) {
 
             throw NseApiException(
-                "NSE returned no option contracts"
+                "NSE returned zero option contracts"
             )
         }
-
 
         return OptionChain(
 
@@ -637,10 +660,165 @@ class NseApi {
         )
     }
 
+    /*
+     * ---------------------------------------------------------
+     * INDIA VIX
+     * ---------------------------------------------------------
+     */
+
+    suspend fun getIndiaVix(): IndiaVix {
+
+        primeNseSession()
+
+        val url =
+            ALL_INDICES_URL +
+                    "?_=${System.currentTimeMillis()}"
+
+        val json =
+            get(
+                url = url,
+                referer =
+                    "$BASE_URL/market-data/" +
+                            "live-market-indices"
+            )
+
+        return parseIndiaVix(json)
+    }
 
     /*
-     * URL encode query parameters.
+     * ---------------------------------------------------------
+     * PARSE INDIA VIX
+     * ---------------------------------------------------------
      */
+
+    private fun parseIndiaVix(
+        json: String
+    ): IndiaVix {
+
+        val root =
+            try {
+                JSONObject(json)
+            } catch (e: Exception) {
+
+                throw NseApiException(
+                    "NSE VIX response is not JSON: " +
+                            json.take(500)
+                )
+            }
+
+        val data =
+            root.optJSONArray(
+                "data"
+            )
+                ?: throw NseApiException(
+                    "NSE VIX response has no data"
+                )
+
+        for (
+            i in 0 until data.length()
+        ) {
+
+            val row =
+                data.optJSONObject(i)
+                    ?: continue
+
+            val indexName =
+                row.optString(
+                    "index",
+                    ""
+                )
+                    .trim()
+                    .uppercase(Locale.US)
+
+            if (
+                indexName == "INDIA VIX" ||
+                indexName.contains("INDIA VIX")
+            ) {
+
+                val last =
+                    getDouble(
+                        row,
+                        "last"
+                    )
+
+                val percentChange =
+                    getDouble(
+                        row,
+                        "percentChange"
+                    )
+
+                val open =
+                    getDouble(
+                        row,
+                        "open"
+                    )
+
+                return IndiaVix(
+
+                    value =
+                        last,
+
+                    changePct =
+                        percentChange,
+
+                    open =
+                        open
+                )
+            }
+        }
+
+        throw NseApiException(
+            "India VIX was not found in NSE response"
+        )
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * NUMBER PARSER
+     * ---------------------------------------------------------
+     *
+     * Some NSE responses may contain numbers as strings.
+     * This handles both:
+     *
+     * 123.45
+     *
+     * and
+     *
+     * "123.45"
+     * ---------------------------------------------------------
+     */
+
+    private fun getDouble(
+        objectValue: JSONObject,
+        key: String
+    ): Double {
+
+        val value =
+            objectValue.opt(key)
+
+        return when (value) {
+
+            is Number ->
+                value.toDouble()
+
+            is String ->
+                value
+                    .replace(",", "")
+                    .trim()
+                    .toDoubleOrNull()
+                    ?: 0.0
+
+            else ->
+                0.0
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * URL ENCODING
+     * ---------------------------------------------------------
+     */
+
     private fun encode(
         value: String
     ): String {
@@ -651,11 +829,13 @@ class NseApi {
         )
     }
 
-
     /*
-     * Current local timestamp.
+     * ---------------------------------------------------------
+     * CURRENT TIME
+     * ---------------------------------------------------------
      */
-    private fun now(): String {
+
+    private fun currentTime(): String {
 
         return SimpleDateFormat(
             "dd-MMM-yyyy HH:mm:ss",
@@ -666,6 +846,11 @@ class NseApi {
     }
 }
 
+/*
+ * -------------------------------------------------------------
+ * NSE API EXCEPTION
+ * -------------------------------------------------------------
+ */
 
 class NseApiException(
     message: String
