@@ -282,4 +282,3 @@ private fun formatMetric(value: Double?): String {
         }
     } ?: "--"
 }
-```
