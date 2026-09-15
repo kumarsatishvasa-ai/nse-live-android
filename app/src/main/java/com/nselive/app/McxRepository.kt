@@ -7,7 +7,6 @@ class McxRepository(
     suspend fun getExpiries(
         symbol: String
     ): List<String> {
-
         return api.getExpiries(symbol)
     }
 
@@ -19,7 +18,7 @@ class McxRepository(
         return api.getOptionChain(
             symbol = symbol,
             expiry = expiry
-        )
+        ).chain
     }
 
     suspend fun getMetrics(
@@ -27,11 +26,10 @@ class McxRepository(
         expiry: String
     ): NseMetrics {
 
-        val chain =
-            api.getOptionChain(
-                symbol = symbol,
-                expiry = expiry
-            )
+        val chain = api.getOptionChain(
+            symbol = symbol,
+            expiry = expiry
+        ).chain
 
         return MetricsCalculator.calculate(
             chain = chain,
