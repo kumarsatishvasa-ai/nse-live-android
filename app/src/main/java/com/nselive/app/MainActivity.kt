@@ -69,7 +69,6 @@ override fun onCreate(savedInstanceState: Bundle?) {
 
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun McxScreen(
 mcxViewModel: McxViewModel = viewModel()
@@ -99,8 +98,8 @@ Scaffold(
 
         SymbolSelector(
             symbol = mcxState.symbol,
-            onSymbolSelected = {
-                mcxViewModel.setSymbol(it)
+            onSymbolSelected = { symbol ->
+                mcxViewModel.setSymbol(symbol)
             }
         )
 
@@ -109,8 +108,8 @@ Scaffold(
         ExpirySelector(
             expiries = mcxState.expiries,
             selectedExpiry = mcxState.selectedExpiry,
-            onExpirySelected = {
-                mcxViewModel.selectExpiry(it)
+            onExpirySelected = { expiry ->
+                mcxViewModel.selectExpiry(expiry)
             }
         )
 
@@ -274,7 +273,7 @@ mutableStateOf(false)
 if (expiries.isEmpty()) {
 
     OutlinedTextField(
-        value = "",
+        value = selectedExpiry ?: "",
         onValueChange = {},
         readOnly = true,
         label = {
@@ -576,10 +575,9 @@ horizontalArrangement = Arrangement.SpaceBetween
 private fun OptionChainTable(
 chain: OptionChain
 ) {
-
-```
 if (chain.contracts.isEmpty()) {
 
+```
     Text(
         text = "No option-chain contracts available.",
         modifier = Modifier.padding(16.dp)
