@@ -6,51 +6,137 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+/**
+ * MCX option-chain API client.
+ *
+ * IMPORTANT:
+ *
+ * This class expects an authorized MCX market-data service
+ * to expose JSON in the format documented at the bottom
+ * of this file.
+ *
+ * It does NOT use Nubra.
+ * It does NOT use Dhan.
+ * It does NOT generate fake market data.
+ *
+ * MCX's official website publishes the option-chain fields:
+ *
+ * CALLS:
+ *   OI
+ *   Change in OI
+ *   Volume
+ *   LTP
+ *
+ * STRIKE
+ *
+ * PUTS:
+ *   LTP
+ *   Volume
+ *   Change in OI
+ *   OI
+ *
+ * Those fields are converted into BseMcxOption objects.
+ */
 class McxApi {
 
+    companion object {
+
+        /*
+         * =====================================================
+         * YOUR MCX MARKET-DATA SERVER
+         * =====================================================
+         *
+         * Replace this with the URL of your authorized
+         * MCX market-data service.
+         *
+         * Example:
+         *
+         * https://your-server.example.com
+         *
+         * Do NOT put a random API URL here.
+         */
+        private const val BASE_URL =
+            "https://YOUR-MCX-DATA-SERVER"
+
+        /*
+         * API paths.
+         */
+        private const val OPTION_CHAIN_PATH =
+            "/mcx/option-chain"
+
+        private const val EXPIRIES_PATH =
+            "/mcx/expiries"
+
+        private const val QUOTE_PATH =
+            "/mcx/quote"
+    }
+
     /*
-     * IMPORTANT:
-     *
-     * This must point to your authorized MCX market-data
-     * service/feed.
-     *
-     * Do not put an invented MCX API URL here.
+     * =========================================================
+     * HTTP CLIENT
+     * =========================================================
      */
-    private val baseUrl =
-        "https://YOUR-MCX-DATA-SERVER"
 
     private val client =
         OkHttpClient.Builder()
+
             .connectTimeout(
                 20,
                 TimeUnit.SECONDS
             )
+
             .readTimeout(
                 30,
                 TimeUnit.SECONDS
             )
+
+            .writeTimeout(
+                30,
+                TimeUnit.SECONDS
+            )
+
+            .retryOnConnectionFailure(true)
+
+            .followRedirects(true)
+
+            .followSslRedirects(true)
+
             .build()
 
-    suspend fun getOptionChain(
-        symbol: String,
-        expiry: String
-    ): BseMcxOptionChain =
-        withContext(Dispatchers.IO) {
+    /*
+     * =========================================================
+     * HTTP GET
+     * =========================================================
+     */
 
-            val url =
-                "$baseUrl/mcx/option-chain" +
-                        "?symbol=$symbol" +
-                        "&expiry=$expiry"
+    private suspend fun get(
+        url: String
+    ): String =
+        withContext(Dispatchers.IO) {
 
             val request =
                 Request.Builder()
+
                     .url(url)
+
+                    .get()
+
                     .header(
                         "Accept",
                         "application/json"
                     )
+
+                    .header(
+                        "User-Agent",
+                        "NSELive/1.0 Android"
+                    )
+
                     .build()
 
             client
@@ -58,59 +144,431 @@ class McxApi {
                 .execute()
                 .use { response ->
 
-                    if (!response.isSuccessful) {
-                        throw RuntimeException(
-                            "MCX HTTP ${response.code}"
-                        )
-                    }
-
                     val body =
                         response.body
                             ?.string()
-                            ?: throw RuntimeException(
-                                "Empty MCX response"
-                            )
+                            ?: ""
 
-                    parse(body)
+                    if (!response.isSuccessful) {
+
+                        throw McxApiException(
+                            "MCX HTTP ${response.code}: " +
+                                    body.take(300)
+                        )
+                    }
+
+                    if (body.isBlank()) {
+
+                        throw McxApiException(
+                            "MCX returned an empty response"
+                        )
+                    }
+
+                    body
                 }
         }
 
-    private fun parse(
+    /*
+     * =========================================================
+     * GET EXPIRIES
+     * =========================================================
+     *
+     * Example:
+     *
+     * getExpiries("CRUDEOIL")
+     *
+     * returns:
+     *
+     * [
+     *   "17SEP2026",
+     *   "19OCT2026",
+     *   "19NOV2026"
+     * ]
+     */
+
+    suspend fun getExpiries(
+        symbol: String
+    ): List<String> {
+
+        require(
+            symbol.isNotBlank()
+        ) {
+            "MCX symbol cannot be empty"
+        }
+
+        val encodedSymbol =
+            encode(symbol)
+
+        val url =
+            BASE_URL +
+                    EXPIRIES_PATH +
+                    "?symbol=$encodedSymbol" +
+                    "&_=${System.currentTimeMillis()}"
+
+        val json =
+            get(url)
+
+        return parseExpiryResponse(
+            json
+        )
+    }
+
+    /*
+     * =========================================================
+     * GET OPTION CHAIN
+     * =========================================================
+     *
+     * Example:
+     *
+     * getOptionChain(
+     *     symbol = "CRUDEOIL",
+     *     expiry = "17SEP2026"
+     * )
+     */
+
+    suspend fun getOptionChain(
+        symbol: String,
+        expiry: String
+    ): BseMcxOptionChain {
+
+        require(
+            symbol.isNotBlank()
+        ) {
+            "MCX symbol cannot be empty"
+        }
+
+        require(
+            expiry.isNotBlank()
+        ) {
+            "MCX expiry cannot be empty"
+        }
+
+        val encodedSymbol =
+            encode(symbol)
+
+        val encodedExpiry =
+            encode(expiry)
+
+        val url =
+            BASE_URL +
+                    OPTION_CHAIN_PATH +
+                    "?symbol=$encodedSymbol" +
+                    "&expiry=$encodedExpiry" +
+                    "&_=${System.currentTimeMillis()}"
+
+        val json =
+            get(url)
+
+        return parseOptionChain(
+            json,
+            requestedSymbol = symbol,
+            requestedExpiry = expiry
+        )
+    }
+
+    /*
+     * =========================================================
+     * GET UNDERLYING QUOTE
+     * =========================================================
+     *
+     * This is optional.
+     *
+     * If the option-chain response already contains
+     * underlyingValue, you do not need this call.
+     */
+
+    suspend fun getUnderlyingQuote(
+        symbol: String
+    ): Double {
+
+        val encodedSymbol =
+            encode(symbol)
+
+        val url =
+            BASE_URL +
+                    QUOTE_PATH +
+                    "?symbol=$encodedSymbol" +
+                    "&_=${System.currentTimeMillis()}"
+
+        val json =
+            get(url)
+
+        val root =
+            parseJsonObject(
+                json,
+                "MCX quote response"
+            )
+
+        return firstDouble(
+            root,
+            "underlyingValue",
+            "underlying",
+            "ltp",
+            "lastPrice",
+            "last"
+        )
+            ?: throw McxApiException(
+                "MCX quote does not contain underlying value"
+            )
+    }
+
+    /*
+     * =========================================================
+     * PARSE EXPIRY RESPONSE
+     * =========================================================
+     */
+
+    private fun parseExpiryResponse(
         json: String
+    ): List<String> {
+
+        val root =
+            parseJsonObject(
+                json,
+                "MCX expiry response"
+            )
+
+        val result =
+            mutableListOf<String>()
+
+        /*
+         * Format 1:
+         *
+         * {
+         *   "expiries": [
+         *      "17SEP2026",
+         *      "19OCT2026"
+         *   ]
+         * }
+         */
+
+        val expiryArray =
+            root.optJSONArray(
+                "expiries"
+            )
+
+        if (expiryArray != null) {
+
+            addExpiryArray(
+                expiryArray,
+                result
+            )
+        }
+
+        /*
+         * Format 2:
+         *
+         * {
+         *   "data": [
+         *      {
+         *          "expiry": "17SEP2026"
+         *      }
+         *   ]
+         * }
+         */
+
+        if (result.isEmpty()) {
+
+            val data =
+                root.optJSONArray(
+                    "data"
+                )
+
+            if (data != null) {
+
+                for (
+                    i in 0 until data.length()
+                ) {
+
+                    val row =
+                        data.optJSONObject(i)
+                            ?: continue
+
+                    val expiry =
+                        firstString(
+                            row,
+                            "expiry",
+                            "expiryDate",
+                            "expirationDate"
+                        )
+
+                    if (
+                        !expiry.isNullOrBlank() &&
+                        !result.contains(expiry)
+                    ) {
+
+                        result.add(
+                            expiry.trim()
+                        )
+                    }
+                }
+            }
+        }
+
+        /*
+         * Format 3:
+         *
+         * {
+         *   "records": {
+         *      "expiryDates": [...]
+         *   }
+         * }
+         */
+
+        if (result.isEmpty()) {
+
+            val records =
+                root.optJSONObject(
+                    "records"
+                )
+
+            val recordsExpiry =
+                records?.optJSONArray(
+                    "expiryDates"
+                )
+
+            if (recordsExpiry != null) {
+
+                addExpiryArray(
+                    recordsExpiry,
+                    result
+                )
+            }
+        }
+
+        if (result.isEmpty()) {
+
+            throw McxApiException(
+                "MCX returned no expiry dates. " +
+                        "Response: ${json.take(500)}"
+            )
+        }
+
+        return result
+            .distinct()
+    }
+
+    /*
+     * =========================================================
+     * PARSE OPTION CHAIN
+     * =========================================================
+     */
+
+    private fun parseOptionChain(
+        json: String,
+        requestedSymbol: String,
+        requestedExpiry: String
     ): BseMcxOptionChain {
 
         val root =
-            JSONObject(json)
+            parseJsonObject(
+                json,
+                "MCX option-chain response"
+            )
+
+        /*
+         * -----------------------------------------------------
+         * UNDERLYING
+         * -----------------------------------------------------
+         */
 
         val underlying =
-            root.optString(
+            firstString(
+                root,
                 "underlying",
-                ""
+                "symbol",
+                "commodity"
             )
+                ?.trim()
+                ?.takeIf {
+                    it.isNotEmpty()
+                }
+                ?: requestedSymbol
+
+        /*
+         * -----------------------------------------------------
+         * UNDERLYING VALUE
+         * -----------------------------------------------------
+         */
 
         val underlyingValue =
-            root.optDouble(
+            firstDouble(
+                root,
                 "underlyingValue",
-                0.0
+                "underlyingPrice",
+                "underlyingLtp",
+                "ulProductLtp",
+                "lastPrice"
             )
+                ?: 0.0
+
+        /*
+         * -----------------------------------------------------
+         * EXPIRY
+         * -----------------------------------------------------
+         */
 
         val expiry =
-            root.optString(
+            firstString(
+                root,
                 "expiry",
-                ""
+                "expiryDate",
+                "expirationDate"
             )
+                ?.trim()
+                ?.takeIf {
+                    it.isNotEmpty()
+                }
+                ?: requestedExpiry
+
+        /*
+         * -----------------------------------------------------
+         * TIMESTAMP
+         * -----------------------------------------------------
+         */
 
         val timestamp =
-            root.optString(
+            firstString(
+                root,
                 "timestamp",
-                ""
+                "time",
+                "asOn",
+                "updatedAt"
             )
+                ?.trim()
+                ?.takeIf {
+                    it.isNotEmpty()
+                }
+                ?: currentTime()
+
+        /*
+         * -----------------------------------------------------
+         * OPTION ROWS
+         * -----------------------------------------------------
+         *
+         * Most convenient format:
+         *
+         * "data": [
+         *   {
+         *     "strike": 6850,
+         *     "callOi": 1200,
+         *     "callVolume": 500,
+         *     "callLtp": 85.50,
+         *     "putOi": 1500,
+         *     "putVolume": 650,
+         *     "putLtp": 92.25
+         *   }
+         * ]
+         */
 
         val data =
-            root.optJSONArray(
-                "data"
+            findOptionDataArray(
+                root
             )
-                ?: JSONArray()
+                ?: throw McxApiException(
+                    "MCX response contains no option-chain rows. " +
+                            "Response: ${json.take(800)}"
+                )
 
         val contracts =
             mutableListOf<BseMcxOption>()
@@ -123,90 +581,50 @@ class McxApi {
                 data.optJSONObject(i)
                     ?: continue
 
-            val strike =
-                row.optDouble(
-                    "strike",
-                    0.0
+            val contract =
+                parseOptionRow(
+                    row = row,
+                    underlying = underlying,
+                    expiry = expiry
                 )
 
-            if (strike <= 0.0) {
-                continue
+            if (
+                contract != null &&
+                contract.strike > 0.0
+            ) {
+
+                contracts.add(
+                    contract
+                )
             }
+        }
 
-            contracts.add(
-                BseMcxOption(
+        if (contracts.isEmpty()) {
 
-                    underlying =
-                        underlying,
-
-                    expiry =
-                        expiry,
-
-                    strike =
-                        strike,
-
-                    callOi =
-                        row.optDouble(
-                            "callOi",
-                            0.0
-                        ),
-
-                    callOiChange =
-                        row.optDouble(
-                            "callOiChange",
-                            0.0
-                        ),
-
-                    callVolume =
-                        row.optDouble(
-                            "callVolume",
-                            0.0
-                        ),
-
-                    callIv =
-                        row.optDouble(
-                            "callIv",
-                            0.0
-                        ),
-
-                    callLtp =
-                        row.optDouble(
-                            "callLtp",
-                            0.0
-                        ),
-
-                    putOi =
-                        row.optDouble(
-                            "putOi",
-                            0.0
-                        ),
-
-                    putOiChange =
-                        row.optDouble(
-                            "putOiChange",
-                            0.0
-                        ),
-
-                    putVolume =
-                        row.optDouble(
-                            "putVolume",
-                            0.0
-                        ),
-
-                    putIv =
-                        row.optDouble(
-                            "putIv",
-                            0.0
-                        ),
-
-                    putLtp =
-                        row.optDouble(
-                            "putLtp",
-                            0.0
-                        )
-                )
+            throw McxApiException(
+                "MCX returned zero valid option contracts. " +
+                        "Response: ${json.take(800)}"
             )
         }
+
+        /*
+         * If the exchange/feed did not give us the
+         * underlying value, try to derive it from
+         * the response's quote field.
+         */
+
+        val finalUnderlyingValue =
+            if (underlyingValue > 0.0) {
+
+                underlyingValue
+
+            } else {
+
+                findUnderlyingFromRows(
+                    root
+                )
+                    ?: 0.0
+            }
 
         return BseMcxOptionChain(
 
@@ -216,7 +634,7 @@ class McxApi {
                 underlying,
 
             underlyingValue =
-                underlyingValue,
+                finalUnderlyingValue,
 
             expiry =
                 expiry,
@@ -228,4 +646,578 @@ class McxApi {
                 contracts
         )
     }
+
+    /*
+     * =========================================================
+     * FIND OPTION DATA ARRAY
+     * =========================================================
+     */
+
+    private fun findOptionDataArray(
+        root: JSONObject
+    ): JSONArray? {
+
+        /*
+         * Direct:
+         *
+         * "data": [...]
+         */
+
+        root.optJSONArray(
+            "data"
+        )?.let {
+            return it
+        }
+
+        /*
+         * "optionChain": [...]
+         */
+
+        root.optJSONArray(
+            "optionChain"
+        )?.let {
+            return it
+        }
+
+        /*
+         * "contracts": [...]
+         */
+
+        root.optJSONArray(
+            "contracts"
+        )?.let {
+            return it
+        }
+
+        /*
+         * Nested:
+         *
+         * "records": {
+         *     "data": [...]
+         * }
+         */
+
+        val records =
+            root.optJSONObject(
+                "records"
+            )
+
+        records
+            ?.optJSONArray(
+                "data"
+            )
+            ?.let {
+                return it
+            }
+
+        records
+            ?.optJSONArray(
+                "optionChain"
+            )
+            ?.let {
+                return it
+            }
+
+        return null
+    }
+
+    /*
+     * =========================================================
+     * PARSE ONE OPTION ROW
+     * =========================================================
+     *
+     * Supports both our normalized format:
+     *
+     * callOi
+     * putOi
+     *
+     * and more descriptive exchange/feed names.
+     */
+
+    private fun parseOptionRow(
+        row: JSONObject,
+        underlying: String,
+        expiry: String
+    ): BseMcxOption? {
+
+        val strike =
+            firstDouble(
+                row,
+                "strike",
+                "strikePrice",
+                "strike_price"
+            )
+                ?: return null
+
+        /*
+         * -----------------------------------------------------
+         * CALL
+         * -----------------------------------------------------
+         */
+
+        val callObject =
+            firstObject(
+                row,
+                "CE",
+                "CALL",
+                "call",
+                "callOption"
+            )
+
+        /*
+         * -----------------------------------------------------
+         * PUT
+         * -----------------------------------------------------
+         */
+
+        val putObject =
+            firstObject(
+                row,
+                "PE",
+                "PUT",
+                "put",
+                "putOption"
+            )
+
+        /*
+         * Direct fields are checked first.
+         * Nested CE/PE fields are used as fallback.
+         */
+
+        val callOi =
+            firstDouble(
+                row,
+                "callOi",
+                "callOI",
+                "ceOi",
+                "ceOI"
+            )
+                ?: firstDouble(
+                    callObject,
+                    "oi",
+                    "openInterest"
+                )
+                ?: 0.0
+
+        val callOiChange =
+            firstDouble(
+                row,
+                "callOiChange",
+                "callOIChange",
+                "ceOiChange",
+                "ceOIChange"
+            )
+                ?: firstDouble(
+                    callObject,
+                    "oiChange",
+                    "changeInOi",
+                    "changeinOpenInterest"
+                )
+                ?: 0.0
+
+        val callVolume =
+            firstDouble(
+                row,
+                "callVolume",
+                "ceVolume"
+            )
+                ?: firstDouble(
+                    callObject,
+                    "volume",
+                    "totalTradedVolume"
+                )
+                ?: 0.0
+
+        val callIv =
+            firstDouble(
+                row,
+                "callIv",
+                "callIV",
+                "ceIv",
+                "ceIV"
+            )
+                ?: firstDouble(
+                    callObject,
+                    "iv",
+                    "impliedVolatility"
+                )
+                ?: 0.0
+
+        val callLtp =
+            firstDouble(
+                row,
+                "callLtp",
+                "callLTP",
+                "ceLtp",
+                "ceLTP"
+            )
+                ?: firstDouble(
+                    callObject,
+                    "ltp",
+                    "lastPrice"
+                )
+                ?: 0.0
+
+        /*
+         * -----------------------------------------------------
+         * PUT
+         * -----------------------------------------------------
+         */
+
+        val putOi =
+            firstDouble(
+                row,
+                "putOi",
+                "putOI",
+                "peOi",
+                "peOI"
+            )
+                ?: firstDouble(
+                    putObject,
+                    "oi",
+                    "openInterest"
+                )
+                ?: 0.0
+
+        val putOiChange =
+            firstDouble(
+                row,
+                "putOiChange",
+                "putOIChange",
+                "peOiChange",
+                "peOIChange"
+            )
+                ?: firstDouble(
+                    putObject,
+                    "oiChange",
+                    "changeInOi",
+                    "changeinOpenInterest"
+                )
+                ?: 0.0
+
+        val putVolume =
+            firstDouble(
+                row,
+                "putVolume",
+                "peVolume"
+            )
+                ?: firstDouble(
+                    putObject,
+                    "volume",
+                    "totalTradedVolume"
+                )
+                ?: 0.0
+
+        val putIv =
+            firstDouble(
+                row,
+                "putIv",
+                "putIV",
+                "peIv",
+                "peIV"
+            )
+                ?: firstDouble(
+                    putObject,
+                    "iv",
+                    "impliedVolatility"
+                )
+                ?: 0.0
+
+        val putLtp =
+            firstDouble(
+                row,
+                "putLtp",
+                "putLTP",
+                "peLtp",
+                "peLTP"
+            )
+                ?: firstDouble(
+                    putObject,
+                    "ltp",
+                    "lastPrice"
+                )
+                ?: 0.0
+
+        /*
+         * A row containing no call/put data is ignored.
+         */
+
+        if (
+            callOi == 0.0 &&
+            putOi == 0.0 &&
+            callVolume == 0.0 &&
+            putVolume == 0.0 &&
+            callLtp == 0.0 &&
+            putLtp == 0.0
+        ) {
+            return null
+        }
+
+        return BseMcxOption(
+
+            underlying =
+                underlying,
+
+            expiry =
+                expiry,
+
+            strike =
+                strike,
+
+            callOi =
+                callOi,
+
+            callOiChange =
+                callOiChange,
+
+            callVolume =
+                callVolume,
+
+            callIv =
+                callIv,
+
+            callLtp =
+                callLtp,
+
+            putOi =
+                putOi,
+
+            putOiChange =
+                putOiChange,
+
+            putVolume =
+                putVolume,
+
+            putIv =
+                putIv,
+
+            putLtp =
+                putLtp
+        )
+    }
+
+    /*
+     * =========================================================
+     * JSON HELPERS
+     * =========================================================
+     */
+
+    private fun parseJsonObject(
+        json: String,
+        description: String
+    ): JSONObject {
+
+        try {
+
+            return JSONObject(json)
+
+        } catch (e: Exception) {
+
+            throw McxApiException(
+                "$description is not valid JSON: " +
+                        json.take(500)
+            )
+        }
+    }
+
+    private fun firstDouble(
+        objectValue: JSONObject?,
+        vararg keys: String
+    ): Double? {
+
+        if (objectValue == null) {
+            return null
+        }
+
+        for (key in keys) {
+
+            if (!objectValue.has(key)) {
+                continue
+            }
+
+            val value =
+                objectValue.opt(key)
+
+            when (value) {
+
+                is Number -> {
+                    return value.toDouble()
+                }
+
+                is String -> {
+
+                    val number =
+                        value
+                            .replace(
+                                ",",
+                                ""
+                            )
+                            .trim()
+                            .toDoubleOrNull()
+
+                    if (number != null) {
+                        return number
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun firstString(
+        objectValue: JSONObject?,
+        vararg keys: String
+    ): String? {
+
+        if (objectValue == null) {
+            return null
+        }
+
+        for (key in keys) {
+
+            if (!objectValue.has(key)) {
+                continue
+            }
+
+            val value =
+                objectValue.opt(key)
+
+            if (
+                value != null &&
+                value != JSONObject.NULL
+            ) {
+
+                val text =
+                    value.toString().trim()
+
+                if (text.isNotEmpty()) {
+                    return text
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun firstObject(
+        objectValue: JSONObject?,
+        vararg keys: String
+    ): JSONObject? {
+
+        if (objectValue == null) {
+            return null
+        }
+
+        for (key in keys) {
+
+            val child =
+                objectValue.optJSONObject(
+                    key
+                )
+
+            if (child != null) {
+                return child
+            }
+        }
+
+        return null
+    }
+
+    private fun addExpiryArray(
+        array: JSONArray,
+        destination: MutableList<String>
+    ) {
+
+        for (
+            i in 0 until array.length()
+        ) {
+
+            val expiry =
+                array.optString(
+                    i,
+                    ""
+                ).trim()
+
+            if (
+                expiry.isNotEmpty() &&
+                !destination.contains(expiry)
+            ) {
+
+                destination.add(
+                    expiry
+                )
+            }
+        }
+    }
+
+    /*
+     * =========================================================
+     * FALLBACK UNDERLYING VALUE
+     * =========================================================
+     */
+
+    private fun findUnderlyingFromRows(
+        root: JSONObject
+    ): Double? {
+
+        val value =
+            firstDouble(
+                root,
+                "ulProductLtp",
+                "underlyingLtp",
+                "underlyingPrice"
+            )
+
+        if (
+            value != null &&
+            value > 0.0
+        ) {
+            return value
+        }
+
+        return null
+    }
+
+    /*
+     * =========================================================
+     * URL ENCODING
+     * =========================================================
+     */
+
+    private fun encode(
+        value: String
+    ): String {
+
+        return URLEncoder.encode(
+            value,
+            "UTF-8"
+        )
+    }
+
+    /*
+     * =========================================================
+     * LOCAL TIMESTAMP
+     * =========================================================
+     */
+
+    private fun currentTime(): String {
+
+        return SimpleDateFormat(
+            "dd-MMM-yyyy HH:mm:ss",
+            Locale.US
+        ).format(
+            Date()
+        )
+    }
 }
+
+/*
+ * =============================================================
+ * MCX API EXCEPTION
+ * =============================================================
+ */
+
+class McxApiException(
+    message: String
+) : RuntimeException(message)
