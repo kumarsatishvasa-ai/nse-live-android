@@ -7,239 +7,193 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
+data class McxUiState(
+val symbol: String = "CRUDEOIL",
+val expiries: List<String> = emptyList(),
+val selectedExpiry: String? = null,
+val chain: OptionChain? = null,
+val metrics: NseMetrics? = null,
+val loading: Boolean = false,
+val error: String? = null
+)
 
-* UI state for the MCX option-chain screen.
-  */
-  data class McxUiState(
-  val symbol: String = "CRUDEOIL",
-  val expiries: List<String> = emptyList(),
-  val selectedExpiry: String? = null,
-  val chain: OptionChain? = null,
-  val metrics: NseMetrics? = null,
-  val loading: Boolean = false,
-  val error: String? = null
-  )
+class McxViewModel(
+private val repository: McxRepository = McxRepository()
+) : ViewModel() {
 
-/**
+```
+private val _uiState = MutableStateFlow(McxUiState())
 
-* ViewModel for MCX option-chain data.
-  */
-  class McxViewModel(
-  private val repository: McxRepository = McxRepository()
-  ) : ViewModel() {
+val uiState: StateFlow<McxUiState> =
+    _uiState.asStateFlow()
 
-  private val _uiState = MutableStateFlow(McxUiState())
+init {
+    loadExpiries()
+}
 
-  val uiState: StateFlow<McxUiState> =
-  _uiState.asStateFlow()
-
-  init {
-  loadExpiries()
-  }
-
-  /**
-
-  * Change the MCX symbol.
-    */
-    fun setSymbol(symbol: String) {
+fun setSymbol(symbol: String) {
     val normalized = symbol.trim().uppercase()
 
     if (normalized.isEmpty()) {
-    return
+        return
     }
 
     _uiState.value = _uiState.value.copy(
-    symbol = normalized,
-    expiries = emptyList(),
-    selectedExpiry = null,
-    chain = null,
-    metrics = null,
-    loading = false,
-    error = null
+        symbol = normalized,
+        expiries = emptyList(),
+        selectedExpiry = null,
+        chain = null,
+        metrics = null,
+        error = null
     )
 
     loadExpiries()
-    }
+}
 
-  /**
-
-  * Load available expiry dates.
-    */
-    fun loadExpiries() {
+fun loadExpiries() {
     val symbol = _uiState.value.symbol
 
     viewModelScope.launch {
-    _uiState.value = _uiState.value.copy(
-    loading = true,
-    error = null
-    )
+        _uiState.value = _uiState.value.copy(
+            loading = true,
+            error = null
+        )
 
-    ```
-     try {
-         val expiries = repository.getExpiries(symbol)
+        try {
+            val expiries = repository.getExpiries(symbol)
 
-         if (expiries.isEmpty()) {
-             _uiState.value = _uiState.value.copy(
-                 expiries = emptyList(),
-                 selectedExpiry = null,
-                 loading = false,
-                 error = "No MCX expiries found for $symbol."
-             )
-             return@launch
-         }
+            if (expiries.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    expiries = emptyList(),
+                    selectedExpiry = null,
+                    loading = false,
+                    error = "No MCX expiries found for $symbol."
+                )
+                return@launch
+            }
 
-         val currentSelected =
-             _uiState.value.selectedExpiry
+            val currentSelected =
+                _uiState.value.selectedExpiry
 
-         val selected =
-             if (
-                 currentSelected != null &&
-                 expiries.contains(currentSelected)
-             ) {
-                 currentSelected
-             } else {
-                 expiries.first()
-             }
+            val selected =
+                if (
+                    currentSelected != null &&
+                    expiries.contains(currentSelected)
+                ) {
+                    currentSelected
+                } else {
+                    expiries.first()
+                }
 
-         _uiState.value = _uiState.value.copy(
-             expiries = expiries,
-             selectedExpiry = selected,
-             loading = false,
-             error = null
-         )
+            _uiState.value = _uiState.value.copy(
+                expiries = expiries,
+                selectedExpiry = selected,
+                loading = false,
+                error = null
+            )
 
-         loadOptionChain(selected)
+            loadOptionChain(selected)
 
-     } catch (exception: Exception) {
-         _uiState.value = _uiState.value.copy(
-             loading = false,
-             error = exception.message
-                 ?: "Unable to load MCX expiry dates."
-         )
-     }
-    ```
-
+        } catch (exception: Exception) {
+            _uiState.value = _uiState.value.copy(
+                loading = false,
+                error = exception.message
+                    ?: "Unable to load MCX expiry dates."
+            )
+        }
     }
-    }
+}
 
-  /**
-
-  * Select an expiry and load its option chain.
-    */
-    fun selectExpiry(expiry: String) {
+fun selectExpiry(expiry: String) {
     val normalizedExpiry = expiry.trim()
 
     if (normalizedExpiry.isEmpty()) {
-    return
+        return
     }
 
     _uiState.value = _uiState.value.copy(
-    selectedExpiry = normalizedExpiry,
-    error = null
+        selectedExpiry = normalizedExpiry,
+        error = null
     )
 
     loadOptionChain(normalizedExpiry)
-    }
+}
 
-  /**
-
-  * Load option-chain data.
-    */
-    fun loadOptionChain(
+fun loadOptionChain(
     expiry: String? = _uiState.value.selectedExpiry
-    ) {
+) {
     val state = _uiState.value
     val symbol = state.symbol
     val selectedExpiry = expiry
 
     if (selectedExpiry.isNullOrBlank()) {
-    _uiState.value = state.copy(
-    loading = false,
-    error = "Please select an MCX expiry."
-    )
-    return
+        _uiState.value = state.copy(
+            loading = false,
+            error = "Please select an MCX expiry."
+        )
+        return
     }
 
     viewModelScope.launch {
-    _uiState.value = _uiState.value.copy(
-    selectedExpiry = selectedExpiry,
-    loading = true,
-    error = null
-    )
+        _uiState.value = _uiState.value.copy(
+            selectedExpiry = selectedExpiry,
+            loading = true,
+            error = null
+        )
 
-    ```
-     try {
-         val chain =
-             repository.getOptionChain(
-                 symbol = symbol,
-                 expiry = selectedExpiry
-             )
+        try {
+            val chain = repository.getOptionChain(
+                symbol = symbol,
+                expiry = selectedExpiry
+            )
 
-         /*
-          * MCX does not provide India VIX through this API.
-          * Therefore vix is passed as null.
-          */
-         val metrics =
-             MetricsCalculator.calculate(
-                 chain = chain,
-                 vix = null
-             )
+            val metrics = MetricsCalculator.calculate(
+                chain = chain,
+                vix = null
+            )
 
-         _uiState.value = _uiState.value.copy(
-             chain = chain,
-             metrics = metrics,
-             loading = false,
-             error = null
-         )
+            _uiState.value = _uiState.value.copy(
+                chain = chain,
+                metrics = metrics,
+                loading = false,
+                error = null
+            )
 
-     } catch (exception: Exception) {
-         _uiState.value = _uiState.value.copy(
-             loading = false,
-             error = exception.message
-                 ?: "Unable to load MCX option-chain data."
-         )
-     }
-    ```
-
+        } catch (exception: Exception) {
+            _uiState.value = _uiState.value.copy(
+                loading = false,
+                error = exception.message
+                    ?: "Unable to load MCX option-chain data."
+            )
+        }
     }
-    }
+}
 
-  /**
-
-  * Refresh the current option chain.
-    */
-    fun refresh() {
+fun refresh() {
     val expiry = _uiState.value.selectedExpiry
 
     if (expiry.isNullOrBlank()) {
-    loadExpiries()
+        loadExpiries()
     } else {
-    loadOptionChain(expiry)
+        loadOptionChain(expiry)
     }
-    }
+}
 
-  /**
-
-  * Clear the current error.
-    */
-    fun clearError() {
+fun clearError() {
     _uiState.value = _uiState.value.copy(
-    error = null
+        error = null
     )
-    }
+}
 
-  /**
-
-  * Retry the last operation.
-    */
-    fun retry() {
+fun retry() {
     val state = _uiState.value
 
     if (state.selectedExpiry.isNullOrBlank()) {
-    loadExpiries()
+        loadExpiries()
     } else {
-    loadOptionChain(state.selectedExpiry)
+        loadOptionChain(state.selectedExpiry)
     }
-    }
-    }
+}
+```
+
+}
