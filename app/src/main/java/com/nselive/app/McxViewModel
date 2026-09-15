@@ -21,8 +21,7 @@ data class McxUiState(
 
 class McxViewModel : ViewModel() {
 
-    private val repository =
-        McxRepository()
+    private val repository = McxRepository()
 
     private val _uiState =
         MutableStateFlow(
@@ -38,9 +37,7 @@ class McxViewModel : ViewModel() {
         loadExpiries("CRUDEOIL")
     }
 
-    fun selectSymbol(
-        symbol: String
-    ) {
+    fun selectSymbol(symbol: String) {
 
         refreshJob?.cancel()
 
@@ -49,14 +46,10 @@ class McxViewModel : ViewModel() {
                 symbol = symbol
             )
 
-        loadExpiries(
-            symbol
-        )
+        loadExpiries(symbol)
     }
 
-    fun selectExpiry(
-        expiry: String
-    ) {
+    fun selectExpiry(expiry: String) {
 
         _uiState.value =
             _uiState.value.copy(
@@ -67,9 +60,7 @@ class McxViewModel : ViewModel() {
         startLiveRefresh()
     }
 
-    private fun loadExpiries(
-        symbol: String
-    ) {
+    private fun loadExpiries(symbol: String) {
 
         viewModelScope.launch {
 
@@ -82,23 +73,20 @@ class McxViewModel : ViewModel() {
             try {
 
                 val expiries =
-                    repository.getExpiries(
-                        symbol
-                    )
+                    repository.getExpiries(symbol)
 
-                val first =
-                    expiries.firstOrNull()
-                        ?: ""
+                val firstExpiry =
+                    expiries.firstOrNull() ?: ""
 
                 _uiState.value =
                     _uiState.value.copy(
                         expiries = expiries,
-                        selectedExpiry = first,
+                        selectedExpiry = firstExpiry,
                         loading = false,
                         error = null
                     )
 
-                if (first.isNotBlank()) {
+                if (firstExpiry.isNotBlank()) {
                     startLiveRefresh()
                 }
 
@@ -124,11 +112,9 @@ class McxViewModel : ViewModel() {
 
                 while (isActive) {
 
-                    val state =
-                        _uiState.value
-
                     if (
-                        state.selectedExpiry
+                        _uiState.value
+                            .selectedExpiry
                             .isNotBlank()
                     ) {
 
@@ -159,11 +145,8 @@ class McxViewModel : ViewModel() {
 
             val metrics =
                 repository.getMetrics(
-                    symbol =
-                        state.symbol,
-
-                    expiry =
-                        state.selectedExpiry
+                    symbol = state.symbol,
+                    expiry = state.selectedExpiry
                 )
 
             _uiState.value =
