@@ -1,4 +1,5 @@
 package com.nselive.app
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,9 +10,6 @@ import kotlinx.coroutines.launch
 /**
 
 * UI state for the MCX option-chain screen.
-*
-* Keep this class ONLY in McxViewModel.kt.
-* Do not declare another McxUiState in MainActivity.kt.
   */
   data class McxUiState(
   val symbol: String = "CRUDEOIL",
@@ -26,17 +24,10 @@ import kotlinx.coroutines.launch
 /**
 
 * ViewModel for MCX option-chain data.
-*
-* Responsibilities:
-* * Load available MCX expiries
-* * Select an expiry
-* * Load the option chain
-* * Calculate metrics using MetricsCalculator
-* * Expose everything through StateFlow
-    */
-    class McxViewModel(
-    private val repository: McxRepository = McxRepository()
-    ) : ViewModel() {
+  */
+  class McxViewModel(
+  private val repository: McxRepository = McxRepository()
+  ) : ViewModel() {
 
   private val _uiState = MutableStateFlow(McxUiState())
 
@@ -50,12 +41,6 @@ import kotlinx.coroutines.launch
   /**
 
   * Change the MCX symbol.
-  *
-  * Example:
-  * CRUDEOIL
-  * GOLD
-  * SILVER
-  * NATURALGAS
     */
     fun setSymbol(symbol: String) {
     val normalized = symbol.trim().uppercase()
@@ -70,6 +55,7 @@ import kotlinx.coroutines.launch
     selectedExpiry = null,
     chain = null,
     metrics = null,
+    loading = false,
     error = null
     )
 
@@ -78,7 +64,7 @@ import kotlinx.coroutines.launch
 
   /**
 
-  * Load available expiry dates for the current symbol.
+  * Load available expiry dates.
     */
     fun loadExpiries() {
     val symbol = _uiState.value.symbol
@@ -126,7 +112,6 @@ import kotlinx.coroutines.launch
          loadOptionChain(selected)
 
      } catch (exception: Exception) {
-
          _uiState.value = _uiState.value.copy(
              loading = false,
              error = exception.message
@@ -140,10 +125,9 @@ import kotlinx.coroutines.launch
 
   /**
 
-  * Select an expiry date and load its option chain.
+  * Select an expiry and load its option chain.
     */
     fun selectExpiry(expiry: String) {
-
     val normalizedExpiry = expiry.trim()
 
     if (normalizedExpiry.isEmpty()) {
@@ -160,13 +144,11 @@ import kotlinx.coroutines.launch
 
   /**
 
-  * Load option-chain data for the currently selected symbol
-  * and expiry.
+  * Load option-chain data.
     */
     fun loadOptionChain(
     expiry: String? = _uiState.value.selectedExpiry
     ) {
-
     val state = _uiState.value
     val symbol = state.symbol
     val selectedExpiry = expiry
@@ -180,16 +162,14 @@ import kotlinx.coroutines.launch
     }
 
     viewModelScope.launch {
+    _uiState.value = _uiState.value.copy(
+    selectedExpiry = selectedExpiry,
+    loading = true,
+    error = null
+    )
 
     ```
-     _uiState.value = _uiState.value.copy(
-         selectedExpiry = selectedExpiry,
-         loading = true,
-         error = null
-     )
-
      try {
-
          val chain =
              repository.getOptionChain(
                  symbol = symbol,
@@ -197,11 +177,8 @@ import kotlinx.coroutines.launch
              )
 
          /*
-          * MCX does not provide India VIX.
-          *
-          * Therefore MetricsCalculator receives null.
-          * Other metrics such as PCR, Max Pain, Gamma Flip,
-          * Call Wall and Put Wall can still be calculated.
+          * MCX does not provide India VIX through this API.
+          * Therefore vix is passed as null.
           */
          val metrics =
              MetricsCalculator.calculate(
@@ -217,7 +194,6 @@ import kotlinx.coroutines.launch
          )
 
      } catch (exception: Exception) {
-
          _uiState.value = _uiState.value.copy(
              loading = false,
              error = exception.message
@@ -231,12 +207,10 @@ import kotlinx.coroutines.launch
 
   /**
 
-  * Refresh the current MCX option chain.
+  * Refresh the current option chain.
     */
     fun refresh() {
-
-    val expiry =
-    _uiState.value.selectedExpiry
+    val expiry = _uiState.value.selectedExpiry
 
     if (expiry.isNullOrBlank()) {
     loadExpiries()
@@ -247,7 +221,7 @@ import kotlinx.coroutines.launch
 
   /**
 
-  * Clear the current error message.
+  * Clear the current error.
     */
     fun clearError() {
     _uiState.value = _uiState.value.copy(
