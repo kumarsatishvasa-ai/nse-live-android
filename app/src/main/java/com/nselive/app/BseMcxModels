@@ -1,0 +1,42 @@
+```kotlin
+package com.nselive.app
+
+data class BseMcxOption(
+    val underlying: String,
+    val expiry: String,
+    val strike: Double,
+
+    val callOi: Double = 0.0,
+    val callOiChange: Double = 0.0,
+    val callVolume: Double = 0.0,
+    val callIv: Double = 0.0,
+    val callLtp: Double = 0.0,
+
+    val putOi: Double = 0.0,
+    val putOiChange: Double = 0.0,
+    val putVolume: Double = 0.0,
+    val putIv: Double = 0.0,
+    val putLtp: Double = 0.0
+)
+
+data class BseMcxOptionChain(
+    val exchange: String,
+    val underlying: String,
+    val underlyingValue: Double,
+    val expiry: String,
+    val timestamp: String,
+    val contracts: List<BseMcxOption>
+)
+
+data class BseMcxMetrics(
+    val pcrOi: Double? = null,
+    val pcrVolume: Double? = null,
+    val maxPain: Double? = null,
+    val gammaFlip: Double? = null,
+    val callWall: Double? = null,
+    val putWall: Double? = null,
+    val expectedMove: Double? = null,
+    val updatedAt: String = "--:--:--",
+    val error: String? = null
+)
+```
