@@ -1,51 +1,33 @@
 package com.nselive.app
 
-/**
- * Calculated option-chain metrics.
- *
- * Used by:
- *  - MetricsCalculator
- *  - NseRepository
- *  - NseViewModel
- *
- * The same structure can later be reused for BSE and MCX.
- */
 data class NseMetrics(
-
-    // Basic market information
     val underlyingValue: Double = 0.0,
     val expiry: String = "",
     val timestamp: String = "",
 
-    // Option-chain totals
     val totalCallOi: Double = 0.0,
     val totalPutOi: Double = 0.0,
+
     val totalCallVolume: Double = 0.0,
     val totalPutVolume: Double = 0.0,
 
-    // PCR
     val pcr: Double = 0.0,
 
-    // Max Pain
     val maxPain: Double = 0.0,
 
-    // Gamma Flip
     val gammaFlip: Double = 0.0,
 
-    // OI walls
     val callWall: Double = 0.0,
+
     val putWall: Double = 0.0,
 
-    // Expected move
     val expectedMove: Double = 0.0,
 
-    // Expected range
     val expectedMoveUpper: Double = 0.0,
+
     val expectedMoveLower: Double = 0.0,
 
-    // Optional ATM information
     val atmStrike: Double = 0.0,
 
-    // Number of strikes received
     val strikeCount: Int = 0
 )
