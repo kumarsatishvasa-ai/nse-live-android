@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+
 
 data class NseMetrics(
     val pcrOi: Double? = null,
@@ -139,7 +141,13 @@ fun NseLiveScreen() {
             "SILVERM"
         )
     }
+val mcxViewModel =
+    remember {
+        McxViewModel()
+    }
 
+val mcxState by
+    mcxViewModel.uiState.collectAsState()
     /*
      * Load expiry dates whenever the market segment or
      * symbol changes.
