@@ -8,9 +8,7 @@ class McxRepository(
         symbol: String
     ): List<String> {
 
-        return api.getExpiries(
-            symbol
-        )
+        return api.getExpiries(symbol)
     }
 
     suspend fun getOptionChain(
@@ -34,12 +32,6 @@ class McxRepository(
                 symbol = symbol,
                 expiry = expiry
             )
-
-        /*
-         * MCX option chain doesn't provide India VIX.
-         * Therefore expected move will be null unless
-         * you later add an MCX volatility source.
-         */
 
         return MetricsCalculator.calculate(
             chain = chain,
