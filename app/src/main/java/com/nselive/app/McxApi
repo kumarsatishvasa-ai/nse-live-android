@@ -1,0 +1,231 @@
+package com.nselive.app
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+
+class McxApi {
+
+    /*
+     * IMPORTANT:
+     *
+     * This must point to your authorized MCX market-data
+     * service/feed.
+     *
+     * Do not put an invented MCX API URL here.
+     */
+    private val baseUrl =
+        "https://YOUR-MCX-DATA-SERVER"
+
+    private val client =
+        OkHttpClient.Builder()
+            .connectTimeout(
+                20,
+                TimeUnit.SECONDS
+            )
+            .readTimeout(
+                30,
+                TimeUnit.SECONDS
+            )
+            .build()
+
+    suspend fun getOptionChain(
+        symbol: String,
+        expiry: String
+    ): BseMcxOptionChain =
+        withContext(Dispatchers.IO) {
+
+            val url =
+                "$baseUrl/mcx/option-chain" +
+                        "?symbol=$symbol" +
+                        "&expiry=$expiry"
+
+            val request =
+                Request.Builder()
+                    .url(url)
+                    .header(
+                        "Accept",
+                        "application/json"
+                    )
+                    .build()
+
+            client
+                .newCall(request)
+                .execute()
+                .use { response ->
+
+                    if (!response.isSuccessful) {
+                        throw RuntimeException(
+                            "MCX HTTP ${response.code}"
+                        )
+                    }
+
+                    val body =
+                        response.body
+                            ?.string()
+                            ?: throw RuntimeException(
+                                "Empty MCX response"
+                            )
+
+                    parse(body)
+                }
+        }
+
+    private fun parse(
+        json: String
+    ): BseMcxOptionChain {
+
+        val root =
+            JSONObject(json)
+
+        val underlying =
+            root.optString(
+                "underlying",
+                ""
+            )
+
+        val underlyingValue =
+            root.optDouble(
+                "underlyingValue",
+                0.0
+            )
+
+        val expiry =
+            root.optString(
+                "expiry",
+                ""
+            )
+
+        val timestamp =
+            root.optString(
+                "timestamp",
+                ""
+            )
+
+        val data =
+            root.optJSONArray(
+                "data"
+            )
+                ?: JSONArray()
+
+        val contracts =
+            mutableListOf<BseMcxOption>()
+
+        for (
+            i in 0 until data.length()
+        ) {
+
+            val row =
+                data.optJSONObject(i)
+                    ?: continue
+
+            val strike =
+                row.optDouble(
+                    "strike",
+                    0.0
+                )
+
+            if (strike <= 0.0) {
+                continue
+            }
+
+            contracts.add(
+                BseMcxOption(
+
+                    underlying =
+                        underlying,
+
+                    expiry =
+                        expiry,
+
+                    strike =
+                        strike,
+
+                    callOi =
+                        row.optDouble(
+                            "callOi",
+                            0.0
+                        ),
+
+                    callOiChange =
+                        row.optDouble(
+                            "callOiChange",
+                            0.0
+                        ),
+
+                    callVolume =
+                        row.optDouble(
+                            "callVolume",
+                            0.0
+                        ),
+
+                    callIv =
+                        row.optDouble(
+                            "callIv",
+                            0.0
+                        ),
+
+                    callLtp =
+                        row.optDouble(
+                            "callLtp",
+                            0.0
+                        ),
+
+                    putOi =
+                        row.optDouble(
+                            "putOi",
+                            0.0
+                        ),
+
+                    putOiChange =
+                        row.optDouble(
+                            "putOiChange",
+                            0.0
+                        ),
+
+                    putVolume =
+                        row.optDouble(
+                            "putVolume",
+                            0.0
+                        ),
+
+                    putIv =
+                        row.optDouble(
+                            "putIv",
+                            0.0
+                        ),
+
+                    putLtp =
+                        row.optDouble(
+                            "putLtp",
+                            0.0
+                        )
+                )
+            )
+        }
+
+        return BseMcxOptionChain(
+
+            exchange = "MCX",
+
+            underlying =
+                underlying,
+
+            underlyingValue =
+                underlyingValue,
+
+            expiry =
+                expiry,
+
+            timestamp =
+                timestamp,
+
+            contracts =
+                contracts
+        )
+    }
+}
