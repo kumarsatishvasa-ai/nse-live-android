@@ -69,6 +69,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
 
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun McxScreen(
 mcxViewModel: McxViewModel = viewModel()
@@ -98,8 +99,8 @@ Scaffold(
 
         SymbolSelector(
             symbol = mcxState.symbol,
-            onSymbolSelected = { symbol ->
-                mcxViewModel.setSymbol(symbol)
+            onSymbolSelected = {
+                mcxViewModel.setSymbol(it)
             }
         )
 
@@ -108,8 +109,8 @@ Scaffold(
         ExpirySelector(
             expiries = mcxState.expiries,
             selectedExpiry = mcxState.selectedExpiry,
-            onExpirySelected = { expiry ->
-                mcxViewModel.selectExpiry(expiry)
+            onExpirySelected = {
+                mcxViewModel.selectExpiry(it)
             }
         )
 
@@ -153,27 +154,21 @@ Scaffold(
 
             mcxState.chain?.let { chain ->
 
-                ChainHeader(
-                    chain = chain
-                )
+                ChainHeader(chain = chain)
 
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
             mcxState.metrics?.let { metrics ->
 
-                MetricsCard(
-                    metrics = metrics
-                )
+                MetricsCard(metrics = metrics)
 
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
             mcxState.chain?.let { chain ->
 
-                OptionChainTable(
-                    chain = chain
-                )
+                OptionChainTable(chain = chain)
             }
         }
     }
@@ -239,7 +234,6 @@ ExposedDropdownMenuBox(
             expanded = false
         }
     ) {
-
         symbols.forEach { item ->
 
             DropdownMenuItem(
@@ -273,7 +267,7 @@ mutableStateOf(false)
 if (expiries.isEmpty()) {
 
     OutlinedTextField(
-        value = selectedExpiry ?: "",
+        value = "",
         onValueChange = {},
         readOnly = true,
         label = {
@@ -575,9 +569,10 @@ horizontalArrangement = Arrangement.SpaceBetween
 private fun OptionChainTable(
 chain: OptionChain
 ) {
-if (chain.contracts.isEmpty()) {
 
 ```
+if (chain.contracts.isEmpty()) {
+
     Text(
         text = "No option-chain contracts available.",
         modifier = Modifier.padding(16.dp)
@@ -614,40 +609,13 @@ Card(
             verticalAlignment = Alignment.CenterVertically
         ) {
 
-            TableHeader(
-                text = "Call OI",
-                width = 90.dp
-            )
-
-            TableHeader(
-                text = "Call Vol",
-                width = 90.dp
-            )
-
-            TableHeader(
-                text = "Call LTP",
-                width = 90.dp
-            )
-
-            TableHeader(
-                text = "Strike",
-                width = 100.dp
-            )
-
-            TableHeader(
-                text = "Put LTP",
-                width = 90.dp
-            )
-
-            TableHeader(
-                text = "Put Vol",
-                width = 90.dp
-            )
-
-            TableHeader(
-                text = "Put OI",
-                width = 90.dp
-            )
+            TableHeader("Call OI", 90.dp)
+            TableHeader("Call Vol", 90.dp)
+            TableHeader("Call LTP", 90.dp)
+            TableHeader("Strike", 100.dp)
+            TableHeader("Put LTP", 90.dp)
+            TableHeader("Put Vol", 90.dp)
+            TableHeader("Put OI", 90.dp)
         }
 
         LazyColumn(
