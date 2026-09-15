@@ -22,11 +22,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -49,98 +50,120 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+```
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
 
-        setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    McxScreen()
-                }
+    setContent {
+        MaterialTheme {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                McxScreen()
             }
         }
     }
+}
+```
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun McxScreen(
-    mcxViewModel: McxViewModel = viewModel()
+mcxViewModel: McxViewModel = viewModel()
 ) {
-    val mcxState by mcxViewModel.uiState.collectAsState()
+val mcxState by mcxViewModel.uiState.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "MCX Option Chain"
-                    )
+```
+Scaffold(
+    topBar = {
+        TopAppBar(
+            title = {
+                Text(
+                    text = "MCX Option Chain",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        )
+    }
+) { paddingValues ->
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .padding(12.dp)
+    ) {
+
+        SymbolSelector(
+            symbol = mcxState.symbol,
+            onSymbolSelected = {
+                mcxViewModel.setSymbol(it)
+            }
+        )
+
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
+
+        ExpirySelector(
+            expiries = mcxState.expiries,
+            selectedExpiry = mcxState.selectedExpiry,
+            onExpirySelected = {
+                mcxViewModel.selectExpiry(it)
+            }
+        )
+
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            OutlinedButton(
+                onClick = {
+                    mcxViewModel.refresh()
                 }
+            ) {
+                Text("Refresh")
+            }
+        }
+
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
+
+        mcxState.error?.let { error ->
+
+            ErrorCard(
+                message = error,
+                onRetry = {
+                    mcxViewModel.retry()
+                },
+                onDismiss = {
+                    mcxViewModel.clearError()
+                }
+            )
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
             )
         }
-    ) { paddingValues ->
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(12.dp)
-        ) {
+        if (mcxState.loading) {
 
-            SymbolSelector(
-                symbol = mcxState.symbol,
-                onSymbolSelected = { symbol ->
-                    mcxViewModel.setSymbol(symbol)
-                }
-            )
+            LoadingView()
 
-            Spacer(
-                modifier = Modifier.height(10.dp)
-            )
+        } else {
 
-            ExpirySelector(
-                expiries = mcxState.expiries,
-                selectedExpiry = mcxState.selectedExpiry,
-                onExpirySelected = { expiry ->
-                    mcxViewModel.selectExpiry(expiry)
-                }
-            )
+            mcxState.chain?.let { chain ->
 
-            Spacer(
-                modifier = Modifier.height(10.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        mcxViewModel.refresh()
-                    }
-                ) {
-                    Text("Refresh")
-                }
-            }
-
-            Spacer(
-                modifier = Modifier.height(10.dp)
-            )
-
-            mcxState.error?.let { error ->
-
-                ErrorCard(
-                    message = error,
-                    onRetry = {
-                        mcxViewModel.retry()
-                    },
-                    onDismiss = {
-                        mcxViewModel.clearError()
-                    }
+                ChainHeader(
+                    chain = chain
                 )
 
                 Spacer(
@@ -148,619 +171,679 @@ fun McxScreen(
                 )
             }
 
-            if (mcxState.loading) {
+            mcxState.metrics?.let { metrics ->
 
-                LoadingView()
+                MetricsCard(
+                    metrics = metrics
+                )
 
-            } else {
+                Spacer(
+                    modifier = Modifier.height(10.dp)
+                )
+            }
 
-                mcxState.chain?.let { chain ->
+            mcxState.chain?.let { chain ->
 
-                    ChainHeader(
-                        chain = chain
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(10.dp)
-                    )
-                }
-
-                mcxState.metrics?.let { metrics ->
-
-                    MetricsCard(
-                        metrics = metrics
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(10.dp)
-                    )
-                }
-
-                mcxState.chain?.let { chain ->
-
-                    OptionChainTable(
-                        chain = chain
-                    )
-                }
+                OptionChainTable(
+                    chain = chain
+                )
             }
         }
     }
+}
+```
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SymbolSelector(
-    symbol: String,
-    onSymbolSelected: (String) -> Unit
+symbol: String,
+onSymbolSelected: (String) -> Unit
 ) {
-    val symbols = remember {
-        listOf(
-            "CRUDEOIL",
-            "GOLD",
-            "SILVER",
-            "NATURALGAS",
-            "COPPER",
-            "ZINC",
-            "LEAD",
-            "ALUMINIUM",
-            "NICKEL"
-        )
-    }
+val symbols = remember {
+listOf(
+"CRUDEOIL",
+"GOLD",
+"SILVER",
+"NATURALGAS",
+"COPPER",
+"ZINC",
+"LEAD",
+"ALUMINIUM",
+"NICKEL"
+)
+}
 
-    var expanded by remember {
-        mutableStateOf(false)
-    }
+```
+var expanded by remember {
+    mutableStateOf(false)
+}
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = {
-            expanded = !expanded
+ExposedDropdownMenuBox(
+    expanded = expanded,
+    onExpandedChange = {
+        expanded = !expanded
+    },
+    modifier = Modifier.fillMaxWidth()
+) {
+
+    OutlinedTextField(
+        value = symbol,
+        onValueChange = {},
+        readOnly = true,
+        label = {
+            Text("MCX Symbol")
         },
-        modifier = Modifier.fillMaxWidth()
+        trailingIcon = {
+            ExposedDropdownMenuDefaults.TrailingIcon(
+                expanded = expanded
+            )
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .menuAnchor(),
+        singleLine = true
+    )
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = {
+            expanded = false
+        }
     ) {
 
-        OutlinedTextField(
-            value = symbol,
-            onValueChange = {},
-            readOnly = true,
-            label = {
-                Text("MCX Symbol")
-            },
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(
-                    expanded = expanded
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(),
-            singleLine = true
-        )
+        symbols.forEach { item ->
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = {
-                expanded = false
-            }
-        ) {
-
-            symbols.forEach { item ->
-
-                DropdownMenuItem(
-                    text = {
-                        Text(item)
-                    },
-                    onClick = {
-                        expanded = false
-                        onSymbolSelected(item)
-                    }
-                )
-            }
+            DropdownMenuItem(
+                text = {
+                    Text(item)
+                },
+                onClick = {
+                    expanded = false
+                    onSymbolSelected(item)
+                }
+            )
         }
     }
+}
+```
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExpirySelector(
-    expiries: List<String>,
-    selectedExpiry: String?,
-    onExpirySelected: (String) -> Unit
+expiries: List<String>,
+selectedExpiry: String?,
+onExpirySelected: (String) -> Unit
 ) {
-    var expanded by remember {
-        mutableStateOf(false)
-    }
+var expanded by remember {
+mutableStateOf(false)
+}
 
-    if (expiries.isEmpty()) {
+```
+if (expiries.isEmpty()) {
 
-        OutlinedTextField(
-            value = "",
-            onValueChange = {},
-            readOnly = true,
-            label = {
-                Text("Expiry")
-            },
-            placeholder = {
-                Text("Loading expiries...")
-            },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        return
-    }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = {
-            expanded = !expanded
+    OutlinedTextField(
+        value = "",
+        onValueChange = {},
+        readOnly = true,
+        label = {
+            Text("Expiry")
         },
-        modifier = Modifier.fillMaxWidth()
+        placeholder = {
+            Text("Loading expiries...")
+        },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+
+    return
+}
+
+ExposedDropdownMenuBox(
+    expanded = expanded,
+    onExpandedChange = {
+        expanded = !expanded
+    },
+    modifier = Modifier.fillMaxWidth()
+) {
+
+    OutlinedTextField(
+        value = selectedExpiry ?: "",
+        onValueChange = {},
+        readOnly = true,
+        label = {
+            Text("Expiry")
+        },
+        trailingIcon = {
+            ExposedDropdownMenuDefaults.TrailingIcon(
+                expanded = expanded
+            )
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .menuAnchor(),
+        singleLine = true
+    )
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = {
+            expanded = false
+        }
     ) {
 
-        OutlinedTextField(
-            value = selectedExpiry ?: "",
-            onValueChange = {},
-            readOnly = true,
-            label = {
-                Text("Expiry")
-            },
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(
-                    expanded = expanded
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(),
-            singleLine = true
-        )
+        expiries.forEach { expiry ->
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = {
-                expanded = false
-            }
-        ) {
-
-            expiries.forEach { expiry ->
-
-                DropdownMenuItem(
-                    text = {
-                        Text(expiry)
-                    },
-                    onClick = {
-                        expanded = false
-                        onExpirySelected(expiry)
-                    }
-                )
-            }
+            DropdownMenuItem(
+                text = {
+                    Text(expiry)
+                },
+                onClick = {
+                    expanded = false
+                    onExpirySelected(expiry)
+                }
+            )
         }
     }
+}
+```
+
 }
 
 @Composable
 private fun LoadingView() {
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(30.dp),
-        contentAlignment = Alignment.Center
+```
+Box(
+    modifier = Modifier
+        .fillMaxWidth()
+        .padding(30.dp),
+    contentAlignment = Alignment.Center
+) {
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        CircularProgressIndicator()
 
-            CircularProgressIndicator()
+        Spacer(
+            modifier = Modifier.height(12.dp)
+        )
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
-
-            Text(
-                text = "Loading MCX data..."
-            )
-        }
+        Text(
+            text = "Loading MCX data..."
+        )
     }
+}
+```
+
 }
 
 @Composable
 private fun ErrorCard(
-    message: String,
-    onRetry: () -> Unit,
-    onDismiss: () -> Unit
+message: String,
+onRetry: () -> Unit,
+onDismiss: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
+Card(
+modifier = Modifier.fillMaxWidth(),
+colors = CardDefaults.cardColors(
+containerColor =
+MaterialTheme.colorScheme.errorContainer
+)
+) {
+
+```
+    Column(
+        modifier = Modifier.padding(12.dp)
     ) {
 
-        Column(
-            modifier = Modifier.padding(12.dp)
+        Text(
+            text = "MCX Error",
+            fontWeight = FontWeight.Bold,
+            color =
+                MaterialTheme.colorScheme.onErrorContainer
+        )
+
+        Spacer(
+            modifier = Modifier.height(5.dp)
+        )
+
+        Text(
+            text = message,
+            color =
+                MaterialTheme.colorScheme.onErrorContainer
+        )
+
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
+
+        Row(
+            horizontalArrangement =
+                Arrangement.spacedBy(8.dp)
         ) {
 
-            Text(
-                text = "MCX Error",
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-
-            Spacer(
-                modifier = Modifier.height(5.dp)
-            )
-
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-
-            Spacer(
-                modifier = Modifier.height(10.dp)
-            )
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Button(
+                onClick = onRetry
             ) {
+                Text("Retry")
+            }
 
-                Button(
-                    onClick = onRetry
-                ) {
-                    Text("Retry")
-                }
-
-                OutlinedButton(
-                    onClick = onDismiss
-                ) {
-                    Text("Dismiss")
-                }
+            OutlinedButton(
+                onClick = onDismiss
+            ) {
+                Text("Dismiss")
             }
         }
     }
+}
+```
+
 }
 
 @Composable
 private fun ChainHeader(
-    chain: OptionChain
+chain: OptionChain
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
+Card(
+modifier = Modifier.fillMaxWidth()
+) {
+
+```
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(14.dp),
+        horizontalArrangement =
+            Arrangement.SpaceBetween
     ) {
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column {
+
+            Text(
+                text = "Underlying",
+                style =
+                    MaterialTheme.typography.labelMedium
+            )
+
+            Text(
+                text =
+                    formatNumber(
+                        chain.underlyingValue
+                    ),
+                fontWeight = FontWeight.Bold,
+                style =
+                    MaterialTheme.typography.titleMedium
+            )
+        }
+
+        Column(
+            horizontalAlignment =
+                Alignment.End
         ) {
 
-            Column {
+            Text(
+                text = "Timestamp",
+                style =
+                    MaterialTheme.typography.labelMedium
+            )
 
-                Text(
-                    text = "Underlying",
-                    style = MaterialTheme.typography.labelMedium
-                )
-
-                Text(
-                    text = formatNumber(chain.underlyingValue),
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            Column(
-                horizontalAlignment = Alignment.End
-            ) {
-
-                Text(
-                    text = "Timestamp",
-                    style = MaterialTheme.typography.labelMedium
-                )
-
-                Text(
-                    text = chain.timestamp,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
+            Text(
+                text = chain.timestamp,
+                style =
+                    MaterialTheme.typography.bodySmall
+            )
         }
     }
+}
+```
+
 }
 
 @Composable
 private fun MetricsCard(
-    metrics: NseMetrics
+metrics: NseMetrics
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
+Card(
+modifier = Modifier.fillMaxWidth()
+) {
+
+```
+    Column(
+        modifier = Modifier.padding(12.dp)
     ) {
 
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
+        Text(
+            text = "MCX Analytics",
+            style =
+                MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
 
-            Text(
-                text = "MCX Analytics",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-            )
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
 
-            Spacer(
-                modifier = Modifier.height(10.dp)
-            )
+        MetricRow(
+            label = "PCR OI",
+            value = formatNullable(metrics.pcrOi)
+        )
 
-            MetricRow(
-                label = "PCR OI",
-                value = formatNullable(metrics.pcrOi)
-            )
+        MetricRow(
+            label = "PCR Volume",
+            value = formatNullable(metrics.pcrVolume)
+        )
 
-            MetricRow(
-                label = "PCR Volume",
-                value = formatNullable(metrics.pcrVolume)
-            )
+        MetricRow(
+            label = "Max Pain",
+            value = formatNullable(metrics.maxPain)
+        )
 
-            MetricRow(
-                label = "Max Pain",
-                value = formatNullable(metrics.maxPain)
-            )
+        MetricRow(
+            label = "Gamma Flip",
+            value = formatNullable(metrics.gammaFlip)
+        )
 
-            MetricRow(
-                label = "Gamma Flip",
-                value = formatNullable(metrics.gammaFlip)
-            )
+        MetricRow(
+            label = "Call Wall",
+            value = formatNullable(metrics.callWall)
+        )
 
-            MetricRow(
-                label = "Call Wall",
-                value = formatNullable(metrics.callWall)
-            )
+        MetricRow(
+            label = "Put Wall",
+            value = formatNullable(metrics.putWall)
+        )
 
-            MetricRow(
-                label = "Put Wall",
-                value = formatNullable(metrics.putWall)
-            )
+        MetricRow(
+            label = "Expected Move",
+            value = formatNullable(metrics.expectedMove)
+        )
 
-            MetricRow(
-                label = "Expected Move",
-                value = formatNullable(metrics.expectedMove)
-            )
+        MetricRow(
+            label = "India VIX",
+            value = formatNullable(metrics.indiaVix)
+        )
 
-            MetricRow(
-                label = "India VIX",
-                value = formatNullable(metrics.indiaVix)
-            )
-
-            MetricRow(
-                label = "Updated",
-                value = metrics.updatedAt
-            )
-        }
+        MetricRow(
+            label = "Updated",
+            value = metrics.updatedAt
+        )
     }
+}
+```
+
 }
 
 @Composable
 private fun MetricRow(
-    label: String,
-    value: String
+label: String,
+value: String
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
+Row(
+modifier = Modifier
+.fillMaxWidth()
+.padding(vertical = 4.dp),
+horizontalArrangement =
+Arrangement.SpaceBetween
+) {
 
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+```
+    Text(
+        text = label,
+        color =
+            MaterialTheme.colorScheme.onSurfaceVariant
+    )
 
-        Text(
-            text = value,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-        )
-    }
+    Text(
+        text = value,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+```
+
 }
 
 @Composable
 private fun OptionChainTable(
-    chain: OptionChain
+chain: OptionChain
 ) {
-    if (chain.contracts.isEmpty()) {
 
-        Text(
-            text = "No option-chain contracts available.",
-            modifier = Modifier.padding(16.dp)
-        )
+```
+if (chain.contracts.isEmpty()) {
 
-        return
-    }
+    Text(
+        text =
+            "No option-chain contracts available.",
+        modifier = Modifier.padding(16.dp)
+    )
 
-    val horizontalScrollState =
-        rememberScrollState()
+    return
+}
 
-    Card(
+val horizontalScrollState =
+    rememberScrollState()
+
+Card(
+    modifier = Modifier.fillMaxWidth()
+) {
+
+    Column(
         modifier = Modifier.fillMaxWidth()
     ) {
 
-        Column(
-            modifier = Modifier.fillMaxWidth()
+        Text(
+            text = "Option Chain",
+            modifier = Modifier.padding(12.dp),
+            style =
+                MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(
+                    horizontalScrollState
+                )
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant
+                )
+                .padding(vertical = 8.dp),
+            verticalAlignment =
+                Alignment.CenterVertically
         ) {
 
-            Text(
-                text = "Option Chain",
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            TableHeader(
+                text = "Call OI",
+                width = 90.dp
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(horizontalScrollState)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            TableHeader(
+                text = "Call Vol",
+                width = 90.dp
+            )
 
-                TableHeader(
-                    text = "Call OI",
-                    width = 90.dp
-                )
+            TableHeader(
+                text = "Call LTP",
+                width = 90.dp
+            )
 
-                TableHeader(
-                    text = "Call Vol",
-                    width = 90.dp
-                )
+            TableHeader(
+                text = "Strike",
+                width = 100.dp
+            )
 
-                TableHeader(
-                    text = "Call LTP",
-                    width = 90.dp
-                )
+            TableHeader(
+                text = "Put LTP",
+                width = 90.dp
+            )
 
-                TableHeader(
-                    text = "Strike",
-                    width = 100.dp
-                )
+            TableHeader(
+                text = "Put Vol",
+                width = 90.dp
+            )
 
-                TableHeader(
-                    text = "Put LTP",
-                    width = 90.dp
-                )
+            TableHeader(
+                text = "Put OI",
+                width = 90.dp
+            )
+        }
 
-                TableHeader(
-                    text = "Put Vol",
-                    width = 90.dp
-                )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(450.dp)
+        ) {
 
-                TableHeader(
-                    text = "Put OI",
-                    width = 90.dp
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(450.dp)
-            ) {
-
-                items(
-                    items = chain.contracts,
-                    key = {
-                        it.strikePrice
-                    }
-                ) { contract ->
-
-                    OptionRow(
-                        contract = contract,
-                        horizontalScrollState = horizontalScrollState
-                    )
+            items(
+                items = chain.contracts,
+                key = {
+                    it.strikePrice
                 }
+            ) { contract ->
+
+                OptionRow(
+                    contract = contract,
+                    horizontalScrollState =
+                        horizontalScrollState
+                )
             }
         }
     }
 }
+```
+
+}
 
 @Composable
 private fun TableHeader(
-    text: String,
-    width: Dp
+text: String,
+width: Dp
 ) {
-    Text(
-        text = text,
-        modifier = Modifier.width(width),
-        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-        style = MaterialTheme.typography.labelMedium
-    )
+Text(
+text = text,
+modifier = Modifier.width(width),
+fontWeight = FontWeight.Bold,
+style =
+MaterialTheme.typography.labelMedium
+)
 }
 
 @Composable
 private fun OptionRow(
-    contract: OptionContract,
-    horizontalScrollState: androidx.compose.foundation.ScrollState
+contract: OptionContract,
+horizontalScrollState:
+androidx.compose.foundation.ScrollState
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(horizontalScrollState)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+Row(
+modifier = Modifier
+.fillMaxWidth()
+.horizontalScroll(
+horizontalScrollState
+)
+.padding(vertical = 8.dp),
+verticalAlignment =
+Alignment.CenterVertically
+) {
 
-        TableCell(
-            text = formatNumber(contract.callOi),
-            width = 90.dp
-        )
+```
+    TableCell(
+        text = formatNumber(contract.callOi),
+        width = 90.dp
+    )
 
-        TableCell(
-            text = formatNumber(contract.callVolume),
-            width = 90.dp
-        )
+    TableCell(
+        text =
+            formatNumber(
+                contract.callVolume
+            ),
+        width = 90.dp
+    )
 
-        TableCell(
-            text = formatNumber(contract.callLtp),
-            width = 90.dp
-        )
+    TableCell(
+        text =
+            formatNumber(
+                contract.callLtp
+            ),
+        width = 90.dp
+    )
 
-        TableCell(
-            text = formatNumber(contract.strikePrice),
-            width = 100.dp,
-            bold = true
-        )
+    TableCell(
+        text =
+            formatNumber(
+                contract.strikePrice
+            ),
+        width = 100.dp,
+        bold = true
+    )
 
-        TableCell(
-            text = formatNumber(contract.putLtp),
-            width = 90.dp
-        )
+    TableCell(
+        text =
+            formatNumber(
+                contract.putLtp
+            ),
+        width = 90.dp
+    )
 
-        TableCell(
-            text = formatNumber(contract.putVolume),
-            width = 90.dp
-        )
+    TableCell(
+        text =
+            formatNumber(
+                contract.putVolume
+            ),
+        width = 90.dp
+    )
 
-        TableCell(
-            text = formatNumber(contract.putOi),
-            width = 90.dp
-        )
-    }
+    TableCell(
+        text =
+            formatNumber(
+                contract.putOi
+            ),
+        width = 90.dp
+    )
+}
+```
+
 }
 
 @Composable
 private fun TableCell(
-    text: String,
-    width: Dp,
-    bold: Boolean = false
+text: String,
+width: Dp,
+bold: Boolean = false
 ) {
-    Text(
-        text = text,
-        modifier = Modifier.width(width),
-        fontWeight = if (bold) {
-            androidx.compose.ui.text.font.FontWeight.Bold
-        } else {
-            androidx.compose.ui.text.font.FontWeight.Normal
-        },
-        style = MaterialTheme.typography.bodySmall
-    )
+Text(
+text = text,
+modifier = Modifier.width(width),
+fontWeight =
+if (bold) {
+FontWeight.Bold
+} else {
+FontWeight.Normal
+},
+style =
+MaterialTheme.typography.bodySmall
+)
 }
 
 private fun formatNumber(
-    value: Double
+value: Double
 ): String {
-    return String.format(
-        Locale.US,
-        "%.2f",
-        value
-    )
+return String.format(
+Locale.US,
+"%.2f",
+value
+)
 }
 
 private fun formatNullable(
-    value: Double?
+value: Double?
 ): String {
-    return value?.let {
-        formatNumber(it)
-    } ?: "—"
+return value?.let {
+formatNumber(it)
+} ?: "—"
 }
