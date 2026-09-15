@@ -104,9 +104,7 @@ Scaffold(
             }
         )
 
-        Spacer(
-            modifier = Modifier.height(10.dp)
-        )
+        Spacer(modifier = Modifier.height(10.dp))
 
         ExpirySelector(
             expiries = mcxState.expiries,
@@ -116,9 +114,7 @@ Scaffold(
             }
         )
 
-        Spacer(
-            modifier = Modifier.height(10.dp)
-        )
+        Spacer(modifier = Modifier.height(10.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -133,9 +129,7 @@ Scaffold(
             }
         }
 
-        Spacer(
-            modifier = Modifier.height(10.dp)
-        )
+        Spacer(modifier = Modifier.height(10.dp))
 
         mcxState.error?.let { error ->
 
@@ -149,9 +143,7 @@ Scaffold(
                 }
             )
 
-            Spacer(
-                modifier = Modifier.height(10.dp)
-            )
+            Spacer(modifier = Modifier.height(10.dp))
         }
 
         if (mcxState.loading) {
@@ -166,9 +158,7 @@ Scaffold(
                     chain = chain
                 )
 
-                Spacer(
-                    modifier = Modifier.height(10.dp)
-                )
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             mcxState.metrics?.let { metrics ->
@@ -177,9 +167,7 @@ Scaffold(
                     metrics = metrics
                 )
 
-                Spacer(
-                    modifier = Modifier.height(10.dp)
-                )
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             mcxState.chain?.let { chain ->
@@ -370,9 +358,7 @@ Box(
 
         CircularProgressIndicator()
 
-        Spacer(
-            modifier = Modifier.height(12.dp)
-        )
+        Spacer(modifier = Modifier.height(12.dp))
 
         Text(
             text = "Loading MCX data..."
@@ -392,8 +378,7 @@ onDismiss: () -> Unit
 Card(
 modifier = Modifier.fillMaxWidth(),
 colors = CardDefaults.cardColors(
-containerColor =
-MaterialTheme.colorScheme.errorContainer
+containerColor = MaterialTheme.colorScheme.errorContainer
 )
 ) {
 
@@ -405,27 +390,20 @@ MaterialTheme.colorScheme.errorContainer
         Text(
             text = "MCX Error",
             fontWeight = FontWeight.Bold,
-            color =
-                MaterialTheme.colorScheme.onErrorContainer
+            color = MaterialTheme.colorScheme.onErrorContainer
         )
 
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
+        Spacer(modifier = Modifier.height(5.dp))
 
         Text(
             text = message,
-            color =
-                MaterialTheme.colorScheme.onErrorContainer
+            color = MaterialTheme.colorScheme.onErrorContainer
         )
 
-        Spacer(
-            modifier = Modifier.height(10.dp)
-        )
+        Spacer(modifier = Modifier.height(10.dp))
 
         Row(
-            horizontalArrangement =
-                Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
 
             Button(
@@ -459,44 +437,35 @@ modifier = Modifier.fillMaxWidth()
         modifier = Modifier
             .fillMaxWidth()
             .padding(14.dp),
-        horizontalArrangement =
-            Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
 
         Column {
 
             Text(
                 text = "Underlying",
-                style =
-                    MaterialTheme.typography.labelMedium
+                style = MaterialTheme.typography.labelMedium
             )
 
             Text(
-                text =
-                    formatNumber(
-                        chain.underlyingValue
-                    ),
+                text = formatNumber(chain.underlyingValue),
                 fontWeight = FontWeight.Bold,
-                style =
-                    MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium
             )
         }
 
         Column(
-            horizontalAlignment =
-                Alignment.End
+            horizontalAlignment = Alignment.End
         ) {
 
             Text(
                 text = "Timestamp",
-                style =
-                    MaterialTheme.typography.labelMedium
+                style = MaterialTheme.typography.labelMedium
             )
 
             Text(
                 text = chain.timestamp,
-                style =
-                    MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
@@ -520,14 +489,11 @@ modifier = Modifier.fillMaxWidth()
 
         Text(
             text = "MCX Analytics",
-            style =
-                MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(
-            modifier = Modifier.height(10.dp)
-        )
+        Spacer(modifier = Modifier.height(10.dp))
 
         MetricRow(
             label = "PCR OI",
@@ -588,15 +554,13 @@ Row(
 modifier = Modifier
 .fillMaxWidth()
 .padding(vertical = 4.dp),
-horizontalArrangement =
-Arrangement.SpaceBetween
+horizontalArrangement = Arrangement.SpaceBetween
 ) {
 
 ```
     Text(
         text = label,
-        color =
-            MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
     Text(
@@ -617,16 +581,14 @@ chain: OptionChain
 if (chain.contracts.isEmpty()) {
 
     Text(
-        text =
-            "No option-chain contracts available.",
+        text = "No option-chain contracts available.",
         modifier = Modifier.padding(16.dp)
     )
 
     return
 }
 
-val horizontalScrollState =
-    rememberScrollState()
+val horizontalScrollState = rememberScrollState()
 
 Card(
     modifier = Modifier.fillMaxWidth()
@@ -639,23 +601,19 @@ Card(
         Text(
             text = "Option Chain",
             modifier = Modifier.padding(12.dp),
-            style =
-                MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(
-                    horizontalScrollState
-                )
+                .horizontalScroll(horizontalScrollState)
                 .background(
                     MaterialTheme.colorScheme.surfaceVariant
                 )
                 .padding(vertical = 8.dp),
-            verticalAlignment =
-                Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically
         ) {
 
             TableHeader(
@@ -709,8 +667,7 @@ Card(
 
                 OptionRow(
                     contract = contract,
-                    horizontalScrollState =
-                        horizontalScrollState
+                    horizontalScrollState = horizontalScrollState
                 )
             }
         }
@@ -729,26 +686,21 @@ Text(
 text = text,
 modifier = Modifier.width(width),
 fontWeight = FontWeight.Bold,
-style =
-MaterialTheme.typography.labelMedium
+style = MaterialTheme.typography.labelMedium
 )
 }
 
 @Composable
 private fun OptionRow(
 contract: OptionContract,
-horizontalScrollState:
-androidx.compose.foundation.ScrollState
+horizontalScrollState: androidx.compose.foundation.ScrollState
 ) {
 Row(
 modifier = Modifier
 .fillMaxWidth()
-.horizontalScroll(
-horizontalScrollState
-)
+.horizontalScroll(horizontalScrollState)
 .padding(vertical = 8.dp),
-verticalAlignment =
-Alignment.CenterVertically
+verticalAlignment = Alignment.CenterVertically
 ) {
 
 ```
@@ -758,51 +710,33 @@ Alignment.CenterVertically
     )
 
     TableCell(
-        text =
-            formatNumber(
-                contract.callVolume
-            ),
+        text = formatNumber(contract.callVolume),
         width = 90.dp
     )
 
     TableCell(
-        text =
-            formatNumber(
-                contract.callLtp
-            ),
+        text = formatNumber(contract.callLtp),
         width = 90.dp
     )
 
     TableCell(
-        text =
-            formatNumber(
-                contract.strikePrice
-            ),
+        text = formatNumber(contract.strikePrice),
         width = 100.dp,
         bold = true
     )
 
     TableCell(
-        text =
-            formatNumber(
-                contract.putLtp
-            ),
+        text = formatNumber(contract.putLtp),
         width = 90.dp
     )
 
     TableCell(
-        text =
-            formatNumber(
-                contract.putVolume
-            ),
+        text = formatNumber(contract.putVolume),
         width = 90.dp
     )
 
     TableCell(
-        text =
-            formatNumber(
-                contract.putOi
-            ),
+        text = formatNumber(contract.putOi),
         width = 90.dp
     )
 }
@@ -819,14 +753,12 @@ bold: Boolean = false
 Text(
 text = text,
 modifier = Modifier.width(width),
-fontWeight =
-if (bold) {
+fontWeight = if (bold) {
 FontWeight.Bold
 } else {
 FontWeight.Normal
 },
-style =
-MaterialTheme.typography.bodySmall
+style = MaterialTheme.typography.bodySmall
 )
 }
 
