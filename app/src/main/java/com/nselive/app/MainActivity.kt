@@ -48,6 +48,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.util.Locale
 
+if (Build.VERSION.SDK_INT >= 33) {
+
+    requestPermissions(
+        arrayOf(
+            Manifest.permission.POST_NOTIFICATIONS
+        ),
+        1001
+    )
+}
+
 class MainActivity : ComponentActivity() {
 
 ```
