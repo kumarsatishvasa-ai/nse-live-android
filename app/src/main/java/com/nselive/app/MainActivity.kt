@@ -48,15 +48,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.util.Locale
 
-if (Build.VERSION.SDK_INT >= 33) {
-
-    requestPermissions(
-        arrayOf(
-            Manifest.permission.POST_NOTIFICATIONS
-        ),
-        1001
-    )
-}
 
 class MainActivity : ComponentActivity() {
 
@@ -77,7 +68,15 @@ override fun onCreate(savedInstanceState: Bundle?) {
 
 
 }
+if (Build.VERSION.SDK_INT >= 33) {
 
+    requestPermissions(
+        arrayOf(
+            Manifest.permission.POST_NOTIFICATIONS
+        ),
+        1001
+    )
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun McxScreen(
