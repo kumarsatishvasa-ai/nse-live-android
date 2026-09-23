@@ -60,7 +60,6 @@ if (Build.VERSION.SDK_INT >= 33) {
 
 class MainActivity : ComponentActivity() {
 
-```
 override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
@@ -75,7 +74,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
         }
     }
 }
-```
+
 
 }
 
@@ -86,7 +85,7 @@ mcxViewModel: McxViewModel = viewModel()
 ) {
 val mcxState by mcxViewModel.uiState.collectAsState()
 
-```
+
 Scaffold(
     topBar = {
         TopAppBar(
@@ -183,7 +182,6 @@ Scaffold(
         }
     }
 }
-```
 
 }
 
@@ -207,7 +205,6 @@ listOf(
 )
 }
 
-```
 var expanded by remember {
     mutableStateOf(false)
 }
@@ -258,7 +255,6 @@ ExposedDropdownMenuBox(
         }
     }
 }
-```
 
 }
 
@@ -273,7 +269,7 @@ var expanded by remember {
 mutableStateOf(false)
 }
 
-```
+
 if (expiries.isEmpty()) {
 
     OutlinedTextField(
@@ -340,14 +336,13 @@ ExposedDropdownMenuBox(
         }
     }
 }
-```
 
 }
 
 @Composable
 private fun LoadingView() {
 
-```
+
 Box(
     modifier = Modifier
         .fillMaxWidth()
@@ -368,7 +363,7 @@ Box(
         )
     }
 }
-```
+
 
 }
 
@@ -385,7 +380,7 @@ containerColor = MaterialTheme.colorScheme.errorContainer
 )
 ) {
 
-```
+
     Column(
         modifier = Modifier.padding(12.dp)
     ) {
@@ -423,7 +418,7 @@ containerColor = MaterialTheme.colorScheme.errorContainer
         }
     }
 }
-```
+
 
 }
 
@@ -435,7 +430,6 @@ Card(
 modifier = Modifier.fillMaxWidth()
 ) {
 
-```
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -473,7 +467,7 @@ modifier = Modifier.fillMaxWidth()
         }
     }
 }
-```
+
 
 }
 
@@ -485,7 +479,7 @@ Card(
 modifier = Modifier.fillMaxWidth()
 ) {
 
-```
+
     Column(
         modifier = Modifier.padding(12.dp)
     ) {
@@ -544,7 +538,7 @@ modifier = Modifier.fillMaxWidth()
         )
     }
 }
-```
+
 
 }
 
@@ -560,7 +554,7 @@ modifier = Modifier
 horizontalArrangement = Arrangement.SpaceBetween
 ) {
 
-```
+
     Text(
         text = label,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -571,7 +565,7 @@ horizontalArrangement = Arrangement.SpaceBetween
         fontWeight = FontWeight.SemiBold
     )
 }
-```
+
 
 }
 
@@ -580,7 +574,7 @@ private fun OptionChainTable(
 chain: OptionChain
 ) {
 
-```
+
 if (chain.contracts.isEmpty()) {
 
     Text(
@@ -649,7 +643,7 @@ Card(
         }
     }
 }
-```
+
 
 }
 
@@ -679,7 +673,7 @@ modifier = Modifier
 verticalAlignment = Alignment.CenterVertically
 ) {
 
-```
+
     TableCell(
         text = formatNumber(contract.callOi),
         width = 90.dp
@@ -716,7 +710,7 @@ verticalAlignment = Alignment.CenterVertically
         width = 90.dp
     )
 }
-```
+
 
 }
 
