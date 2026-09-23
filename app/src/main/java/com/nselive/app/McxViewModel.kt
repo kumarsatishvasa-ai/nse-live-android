@@ -89,7 +89,7 @@ import kotlinx.coroutines.launch
     error = null
     )
 
-    ```
+    
      try {
          val expiries = repository.getExpiries(symbol)
 
@@ -130,7 +130,7 @@ import kotlinx.coroutines.launch
                  ?: "Unable to load MCX expiry dates."
          )
      }
-    ```
+    
 
     }
     }
@@ -181,7 +181,7 @@ import kotlinx.coroutines.launch
     error = null
     )
 
-    ```
+    
      try {
          val chain = repository.getOptionChain(
              symbol = symbol,
@@ -213,7 +213,7 @@ import kotlinx.coroutines.launch
                  ?: "Unable to load MCX option-chain data."
          )
      }
-    ```
+    
 
     }
     }
