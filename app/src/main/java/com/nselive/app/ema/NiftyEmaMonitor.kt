@@ -1,123 +1,206 @@
-package com.example.nselive.ema
+package com.nselive.app.ema
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class NiftyEmaMonitor(
-    private val onSignal: (
-        timeframe: TimeFrame,
-        signal: EmaSignal,
-        ema9: Double,
-        ema21: Double
-    ) -> Unit
+    private val fastPeriod: Int = 9,
+    private val slowPeriod: Int = 20,
+    private val intervalMs: Long = 60_000L,
+    private val onSignal: ((EmaSignal) -> Unit)? = null,
+    private val onEmaUpdate: ((Double?, Double?) -> Unit)? = null
 ) {
 
-    private val detector = EmaCrossDetector()
+    private val scope = CoroutineScope(Dispatchers.Default)
+    private var monitorJob: Job? = null
 
-    private val oneMinuteAggregator =
-        CandleAggregator(TimeFrame.ONE_MINUTE)
+    private val prices = mutableListOf<Double>()
 
-    private val threeMinuteAggregator =
-        CandleAggregator(TimeFrame.THREE_MINUTE)
+    private var previousFastEma: Double? = null
+    private var previousSlowEma: Double? = null
 
-    private val oneMinuteCandles =
-        mutableListOf<Candle>()
+    /**
+     * Add the latest NIFTY price.
+     *
+     * The monitor calculates the fast and slow EMA whenever
+     * enough price data is available.
+     */
+    fun addPrice(price: Double) {
+        if (!price.isFinite() || price <= 0.0) return
 
-    private val threeMinuteCandles =
-        mutableListOf<Candle>()
+        synchronized(prices) {
+            prices.add(price)
 
-    fun onNewPrice(
-        timestamp: Long,
-        price: Double
-    ) {
+            // Keep a reasonable amount of history.
+            val maxHistory = maxOf(slowPeriod * 5, 200)
 
-        // -----------------------------
-        // 1 MINUTE
-        // -----------------------------
-
-        val closed1m =
-            oneMinuteAggregator.addPrice(
-                timestamp,
-                price
-            )
-
-        if (closed1m != null) {
-
-            oneMinuteCandles.add(closed1m)
-
-            checkEma(
-                timeframe = TimeFrame.ONE_MINUTE,
-                candles = oneMinuteCandles
-            )
+            if (prices.size > maxHistory) {
+                prices.removeAt(0)
+            }
         }
 
-        // -----------------------------
-        // 3 MINUTE
-        // -----------------------------
+        calculateSignal()
+    }
 
-        val closed3m =
-            threeMinuteAggregator.addPrice(
-                timestamp,
-                price
-            )
+    /**
+     * Add multiple historical prices.
+     *
+     * Prices must be in chronological order:
+     * oldest -> newest.
+     */
+    fun addPrices(values: List<Double>) {
+        values
+            .filter { it.isFinite() && it > 0.0 }
+            .forEach { price ->
+                synchronized(prices) {
+                    prices.add(price)
+                }
+            }
 
-        if (closed3m != null) {
+        val maxHistory = maxOf(slowPeriod * 5, 200)
 
-            threeMinuteCandles.add(closed3m)
+        synchronized(prices) {
+            while (prices.size > maxHistory) {
+                prices.removeAt(0)
+            }
+        }
 
-            checkEma(
-                timeframe = TimeFrame.THREE_MINUTE,
-                candles = threeMinuteCandles
-            )
+        calculateSignal()
+    }
+
+    /**
+     * Calculate current fast/slow EMA and detect a crossover.
+     */
+    fun calculateSignal(): EmaSignal {
+        val snapshot = synchronized(prices) {
+            prices.toList()
+        }
+
+        if (snapshot.size < slowPeriod) {
+            onEmaUpdate?.invoke(null, null)
+            return EmaSignal.HOLD
+        }
+
+        val fastEma = EmaCalculator.calculate(
+            prices = snapshot,
+            period = fastPeriod
+        )
+
+        val slowEma = EmaCalculator.calculate(
+            prices = snapshot,
+            period = slowPeriod
+        )
+
+        onEmaUpdate?.invoke(fastEma, slowEma)
+
+        val signal = EmaCrossDetector.detect(
+            previousFast = previousFastEma,
+            previousSlow = previousSlowEma,
+            currentFast = fastEma,
+            currentSlow = slowEma
+        )
+
+        previousFastEma = fastEma
+        previousSlowEma = slowEma
+
+        if (signal != EmaSignal.HOLD) {
+            onSignal?.invoke(signal)
+        }
+
+        return signal
+    }
+
+    /**
+     * Returns the latest EMA values.
+     */
+    fun getCurrentEma(): EmaResult? {
+        val snapshot = synchronized(prices) {
+            prices.toList()
+        }
+
+        if (snapshot.size < slowPeriod) {
+            return null
+        }
+
+        val fastEma = EmaCalculator.calculate(
+            prices = snapshot,
+            period = fastPeriod
+        ) ?: return null
+
+        val slowEma = EmaCalculator.calculate(
+            prices = snapshot,
+            period = slowPeriod
+        ) ?: return null
+
+        val signal = when {
+            fastEma > slowEma -> EmaSignal.BUY
+            fastEma < slowEma -> EmaSignal.SELL
+            else -> EmaSignal.HOLD
+        }
+
+        return EmaResult(
+            emaFast = fastEma,
+            emaSlow = slowEma,
+            signal = signal
+        )
+    }
+
+    /**
+     * Start periodic monitoring.
+     *
+     * This does not fetch market data itself. Call addPrice()
+     * from your market-data/API layer whenever a new price arrives.
+     */
+    fun start() {
+        if (monitorJob?.isActive == true) return
+
+        monitorJob = scope.launch {
+            while (isActive) {
+                calculateSignal()
+                delay(intervalMs)
+            }
         }
     }
 
-    private fun checkEma(
-        timeframe: TimeFrame,
-        candles: List<Candle>
-    ) {
+    /**
+     * Stop periodic monitoring.
+     */
+    fun stop() {
+        monitorJob?.cancel()
+        monitorJob = null
+    }
 
-        val closes =
-            candles.map { it.close }
+    /**
+     * Clear all EMA history and previous crossover state.
+     */
+    fun reset() {
+        synchronized(prices) {
+            prices.clear()
+        }
 
-        val ema9 =
-            EmaCalculator.calculate(
-                closes,
-                9
-            ) ?: return
+        previousFastEma = null
+        previousSlowEma = null
+    }
 
-        val ema21 =
-            EmaCalculator.calculate(
-                closes,
-                21
-            ) ?: return
-
-        val signal =
-            detector.check(
-                timeframe,
-                ema9,
-                ema21
-            )
-
-        if (signal != EmaSignal.NONE) {
-
-            onSignal(
-                timeframe,
-                signal,
-                ema9,
-                ema21
-            )
+    /**
+     * Current number of stored price samples.
+     */
+    fun priceCount(): Int {
+        return synchronized(prices) {
+            prices.size
         }
     }
 
-    fun clear() {
-
-        oneMinuteCandles.clear()
-        threeMinuteCandles.clear()
-
-        detector.reset(
-            TimeFrame.ONE_MINUTE
-        )
-
-        detector.reset(
-            TimeFrame.THREE_MINUTE
-        )
+    /**
+     * Whether the monitor has enough data to calculate both EMAs.
+     */
+    fun isReady(): Boolean {
+        return synchronized(prices) {
+            prices.size >= slowPeriod
+        }
     }
 }
